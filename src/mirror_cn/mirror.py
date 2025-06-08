@@ -152,8 +152,15 @@ def git(action='clone', url='https://github.com/owner/repo', *args: str):
             Log.error(f'Git URL 格式错误，无法解析 owner/repo: {url}')
             return
         mirror = GIT['github.com'].pop(0)[0]
-        url = mirror + owner_repo.group(1)
-        _call(['git', action, url, *args])
+        owner_repo = str(owner_repo.group(1))
+        _url = mirror + owner_repo
+        _call(['git', action, _url, *args])
+
+        repo = owner_repo.split('/')[-1]
+        to_local = args[0] if len(args) > 0 else repo
+        os.chdir(to_local)
+        _call(['git', 'remote', 'set-url', '--push', 'origin', url])
+        return _url
     else:
         Log.warning(f'Git URL 不包含 github.com，无法使用镜像源: {url}')
 
@@ -331,9 +338,10 @@ def _run_funcs(funcs: Iterable[Callable]):
 
 
 def _get_ns_funcs(keys: Sequence[str], _FUNCS=_GLOBAL_FUNCS) -> list[Callable]:
-    failed = skip = False
+    failed = False
     names = []
     for _name in _FUNCS.keys():
+        skip = False
         for key in keys:
             if key in _name:
                 names.append(_name)
@@ -344,6 +352,7 @@ def _get_ns_funcs(keys: Sequence[str], _FUNCS=_GLOBAL_FUNCS) -> list[Callable]:
         else:
             failed = True
             break
+    Log.debug(f'{failed=}')
     if failed:
         return []
     funcs = [_FUNCS[name] for name in names if callable(_FUNCS[name])]

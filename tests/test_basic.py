@@ -1,16 +1,13 @@
 import pytest
+from mirror_cn.mirror import git
 
 
 @pytest.mark.parametrize(
-    "var_a,var_b",
+    "url",
     [
-        (1, 2),
+        'https://github.com/AClon314/mirror-cn',
     ]
 )
-def test_basic(
-    var_a: int,
-    var_b: int,
-):
-    assert var_a + var_b == 3,  f"Test failed, var_a + var_b = {var_a + var_b}"
-    assert var_a - var_b == -1,  f"Test failed, var_a - var_b = {var_a - var_b}"
-
+def test_git(url: str):
+    mirror_url = git('clone', url=url)
+    assert mirror_url is not None
