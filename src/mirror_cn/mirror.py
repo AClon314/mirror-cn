@@ -154,7 +154,9 @@ def git(action='clone', url='https://github.com/owner/repo', *args: str):
         mirror = GIT['github.com'].pop(0)[0]
         owner_repo = str(owner_repo.group(1))
         _url = mirror + owner_repo
-        _call(['git', action, _url, *args])
+        p = _call(['git', action, _url, *args])
+        if any([err in p.stderr for err in ('404', 'not found', 'not accessible')]):
+            return git(action, url, *args)  # retry
 
         repo = owner_repo.split('/')[-1]
         to_local = args[0] if len(args) > 0 else repo.replace('.git', '')
