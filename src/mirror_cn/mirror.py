@@ -157,7 +157,7 @@ def git(action='clone', url='https://github.com/owner/repo', *args: str):
         _call(['git', action, _url, *args])
 
         repo = owner_repo.split('/')[-1]
-        to_local = args[0] if len(args) > 0 else repo
+        to_local = args[0] if len(args) > 0 else repo.replace('.git', '')
         os.chdir(to_local)
         _call(['git', 'remote', 'set-url', '--push', 'origin', url])
         return _url
