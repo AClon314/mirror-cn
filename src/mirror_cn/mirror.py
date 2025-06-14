@@ -2,8 +2,6 @@
 '''
 %(prog)s git clone https://github.com/owner/repo.git   # temporary use github.com mirror
 %(prog)s git pip pixi...   # set global mirrors for these commands
-%(prog)s --all      # set all global mirrors for CN
-%(prog)s --smart    # run `is_need_mirror()`, set mirror if google is not reachable
 %(prog)s -r         # remove all global mirrors
 %(prog)s -l         # list all mirrors
 %(prog)s -l git     # list git mirrors
@@ -25,10 +23,10 @@ logging.basicConfig(level=_LEVEL, format='[%(asctime)s %(levelname)s] %(filename
 _ID = -1
 MAMBA = 'mamba'
 Log = logging.getLogger(__name__)
-def version(): return f"v{strftime('%Y.%m.%d', localtime(os.path.getmtime(__file__)))}"
+def version(): return strftime('%Y.%m.%d.%H.%M', localtime(os.path.getmtime(__file__)))
 
 
-__version__ = 'v2025.06.08'
+__version__ = f'v{version()}'
 
 GITHUB_RELEASE = [
     ['https://gh.h233.eu.org/https://github.com', '美国', '[美国 Cloudflare CDN] - 该公益加速源由 [@X.I.U/XIU2] 提供'],
@@ -104,13 +102,13 @@ PIP = [
 ]
 CONDA = [
     {
-        'main': [
-            'https://mirrors.ustc.edu.cn/anaconda/pkgs/main',
-            'https://mirrors.ustc.edu.cn/anaconda/pkgs/r',
-            'https://mirrors.ustc.edu.cn/anaconda/pkgs/msys2'
-        ],
-        'conda-forge': ['https://mirrors.ustc.edu.cn/anaconda/cloud'],
-        'bioconda': ['https://mirrors.ustc.edu.cn/anaconda/cloud'],
+        "https://anaconda.com/bioconda": ["https://mirrors.ustc.edu.cn/anaconda/cloud/bioconda"],
+        "https://anaconda.com/conda-forge": ["https://mirrors.ustc.edu.cn/anaconda/cloud/conda-forge"],
+        "https://anaconda.com/nvidia": ["https://mirrors.sustech.edu.cn/anaconda-extra/cloud/nvidia/"],
+        "https://anaconda.com/pytorch": ["https://mirrors.ustc.edu.cn/anaconda/cloud/pytorch"],
+        "https://repo.anaconda.com/pkgs/main": ["https://mirrors.ustc.edu.cn/anaconda/pkgs/main"],
+        "https://repo.anaconda.com/pkgs/msys2": ["https://mirrors.ustc.edu.cn/anaconda/pkgs/msys2"],
+        "https://repo.anaconda.com/pkgs/r": ["https://mirrors.ustc.edu.cn/anaconda/pkgs/r"],
     }
 ]
 ALL = [GITHUB_RELEASE, GIT, PIP, CONDA]
@@ -121,6 +119,7 @@ __RE = {
 _RE = {k: re.compile(v) for k, v in __RE.items()}
 def _shlex_quote(args: Sequence[str]): return ' '.join(shlex.quote(str(arg)) for arg in args)
 def _get_cmd(cmds: Sequence[str] | str): return cmds if isinstance(cmds, str) else _shlex_quote(cmds)
+def _get_domain(url: str): return url.split("://")[1].split("/")[0]
 def _strip(s: str): return s.strip() if s else ''
 
 
@@ -145,7 +144,7 @@ def _call(cmd: Sequence[str] | str, Print=True):
 
 
 def git(action='clone', url='https://github.com/owner/repo', *args: str):
-    '''git clone github.com'''
+    '''2.49.0'''
     if 'github.com' in url:
         owner_repo = _RE['github'].match(url)
         if not owner_repo:
@@ -161,7 +160,7 @@ def git(action='clone', url='https://github.com/owner/repo', *args: str):
         repo = owner_repo.split('/')[-1]
         to_local = args[0] if len(args) > 0 else repo.replace('.git', '')
         os.chdir(to_local)
-        _call(['git', 'remote', 'set-url', '--push', 'origin', url])
+        p = _call(['git', 'remote', 'set-url', '--push', 'origin', url])
         return _url
     else:
         Log.warning(f'Git URL 不包含 github.com，无法使用镜像源: {url}')
@@ -188,16 +187,16 @@ def reset_git(
 
 
 def pip(args: Sequence[str] | str = 'install numpy'):
-    '''add -i url: temporary'''
+    '''24.3.1'''
     cmds = ['pip', _get_cmd(args), '-i', PIP[0], '--timeout', TIMEOUT]
-    p = _call(cmds)
+    return _call(cmds)
 
 
 def global_pip(to_mirror: str | None = None):
     if to_mirror is None:
         to_mirror = PIP.pop(0)
     _call(f'pip config set global.index-url {to_mirror}')
-    _call(f'pip config set global.trusted-host {to_mirror.split("://")[1].split("/")[0]}')
+    _call(f'pip config set global.trusted-host {_get_domain(to_mirror)}')
 
 
 def reset_pip():
@@ -218,12 +217,46 @@ def global_conda(urls: dict | None = None):
             _call(f'{MAMBA} config prepend channels {url}')
 
 
-def pixi():
-    ...
+def pixi(*args: str):
+    '''0.48.1'''
+    env = {
+        'UV_HTTP_TIMEOUT': str(TIMEOUT),
+        'UV_DEFAULT_INDEX': PIP[0],
+        'UV_INSECURE_HOST': _get_domain(PIP[0]),
+    }
+    for k, v in env.items():
+        os.environ[k] = v
+    cmds = ['pixi', _get_cmd(args)]
+    return _call(cmds)
+
+
+def global_pixi(pypi: list[str] = PIP, toml_path: str | None = None):
+    _args = [f'--manifest-path {toml_path}'] if toml_path else ['--global']
+    pixi_prefix = 'pixi config set'.split(' ')
+    index_main = pypi.pop(0)
+    cmds = {
+        'pypi-config.index-url': index_main,
+        'pypi-config.extra-index-urls': str(pypi).replace('\'', '"'),
+        'mirrors': str(CONDA[0]).replace('\'', '"'),
+    }
+    for k, v in cmds.items():
+        _call(pixi_prefix + _args + [k, v])
+
+
+def reset_pixi(toml_path: str | None = None):
+    _args = [f'--manifest-path {toml_path}'] if toml_path else ['--global']
+    pixi_prefix = 'pixi config unset'.split(' ')
+    cmds = [
+        'pypi-config.index-url',
+        'pypi-config.extra-index-urls',
+        'mirrors',
+    ]
+    for cmd in cmds:
+        _call(pixi_prefix + _args + [cmd])
 
 
 def _get_global_funcs(prefix='global_'): return {
-    name: func for name, func in globals().items()
+    name.replace(prefix, ''): func for name, func in globals().items()
     if name.startswith(prefix) and callable(func)}
 
 
@@ -252,15 +285,15 @@ def is_need_mirror(timeout=4.0):
 
 CONCURRENT = 12
 TIMEOUT = 10
-_KW_PARSE = {'nargs': '*', 'metavar': '命令 command', 'default': None}
+_KW_PARSE = {'nargs': '*', 'metavar': '命令 COMMAND', 'default': None}
 
 
 def argParser():
     parser = argparse.ArgumentParser(description=f'国内镜像源助手 Mirror Helper 🧙🪄 🪞 🌐\t{__version__}', usage=__doc__)
     parser.add_argument(
-        '--all', action='store_true', help='设置所有镜像源 Set all mirrors')
+        '-y', '--smart', action='store_true', help=f'⭐ 无人值守智能判断，仅当访问谷歌超过4秒时设置镜像')
     parser.add_argument(
-        '--smart', action='store_true', help='当无法访问谷歌时设置镜像')
+        '--all', action='store_true', help='设置所有镜像源 Set all mirrors')
     parser.add_argument(
         '-r', '--reset', '--remove', **_KW_PARSE, help='移除全局镜像源，走官方源 Remove(reset) mirrors in global config')
     parser.add_argument(
@@ -296,12 +329,13 @@ def main():
         CONCURRENT = ns.concurrent
     if ns.timeout:
         TIMEOUT = ns.timeout
+    Log.debug(f'{globals()=}')
     Shuffle()
     if ns.smart:
         is_need_mirror()
     elif isinstance(ns.reset, Sequence):
         if ns.reset:
-            funcs = _get_ns_funcs(ns.reset, _RESET_FUNCS)
+            funcs = _get_funcs(ns.reset, _RESET_FUNCS)
             _run_funcs(funcs)
         else:
             Log.debug('reset all')
@@ -318,7 +352,7 @@ def main():
         #     for exe in ns.test:
         #         ...
         if args:
-            funcs = _get_ns_funcs(args, _GLOBAL_FUNCS)
+            funcs = _get_funcs(args, _GLOBAL_FUNCS)
             if funcs:
                 Log.debug('all')
                 _run_funcs(funcs)
@@ -339,26 +373,12 @@ def _run_funcs(funcs: Iterable[Callable]):
         func()
 
 
-def _get_ns_funcs(keys: Sequence[str], _FUNCS=_GLOBAL_FUNCS) -> list[Callable]:
-    failed = False
-    names = []
-    for _name in _FUNCS.keys():
-        skip = False
-        for key in keys:
-            if key in _name:
-                names.append(_name)
-                skip = True
-                break
-        if skip:
-            continue
-        else:
-            failed = True
-            break
-    Log.debug(f'{failed=}')
-    if failed:
-        return []
-    funcs = [_FUNCS[name] for name in names if callable(_FUNCS[name])]
-    Log.debug(f'{keys=}\t{_FUNCS.keys()=}\t{names=}')
+def _get_funcs(keys_only: Sequence[str], KEYS_FUNCS=_GLOBAL_FUNCS) -> list[Callable]:
+    _keys = set(keys_only)
+    _KEYS = set(KEYS_FUNCS.keys())
+    names = _keys.intersection(_KEYS)
+    funcs = [KEYS_FUNCS[name] for name in names if callable(KEYS_FUNCS[name])]
+    Log.debug(f'{names=}\t{keys_only=}')
     return funcs
 
 
