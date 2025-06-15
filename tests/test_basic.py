@@ -1,5 +1,5 @@
 import pytest
-from mirror_cn.mirror import git
+from mirror_cn import git
 
 
 @pytest.mark.parametrize(
