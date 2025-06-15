@@ -1,1 +1,1 @@
-from mirror_cn import *
+from mirror_cn.mirror import *
