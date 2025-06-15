@@ -1,19 +1,29 @@
 #!/bin/env python
 '''
+```python
+# See https://github.com/AClon314/mocap-wrapper/tree/master/src/mocap_wrapper/install/pixi.py for more useage
+from mirror_cn import Shuffle, is_need_mirror, set_mirror, reset_mirror
+Shuffle()           # randomize mirrors
+IS_MIRROR = is_need_mirror()  # check if need mirror
+set_mirror()        # set mirrors for all programs
+```
+
 %(prog)s git clone https://github.com/owner/repo.git   # temporary use github.com mirror
-%(prog)s git pip pixi...   # set global mirrors for these commands
+%(prog)s --set git pip...   # set mirrors for these commands
+%(prog)s --set      # set all mirrors
 %(prog)s -r         # remove all global mirrors
 %(prog)s -l         # list all mirrors
 %(prog)s -l git     # list git mirrors
 '''
 import os
 import re
+import sys
 import shlex
+import shutil
 import logging
 import argparse
 import subprocess
 from random import shuffle
-import sys
 from urllib.request import urlopen
 from time import localtime, strftime
 from typing import Callable, Iterable, Literal, Sequence
@@ -21,7 +31,7 @@ IS_DEBUG = os.getenv('GITHUB_ACTIONS', None) or os.getenv('LOG', None)
 _LEVEL = logging.DEBUG if IS_DEBUG else logging.INFO
 logging.basicConfig(level=_LEVEL, format='[%(asctime)s %(levelname)s] %(filename)s:%(lineno)s\t%(message)s', datefmt='%H:%M:%S')
 _ID = -1
-MAMBA = 'mamba'
+_EXE_CONDA = 'mamba'
 Log = logging.getLogger(__name__)
 def version(): return strftime('%Y.%m.%d.%H.%M', localtime(os.path.getmtime(__file__)))
 
@@ -117,8 +127,8 @@ __RE = {
     'github': r'.*github\.com(/[^/]+/[^/]+)',
 }
 _RE = {k: re.compile(v) for k, v in __RE.items()}
-def _shlex_quote(args: Sequence[str]): return ' '.join(shlex.quote(str(arg)) for arg in args)
-def _get_cmd(cmds: Sequence[str] | str): return cmds if isinstance(cmds, str) else _shlex_quote(cmds)
+def _shlex_quote(args: Iterable[str]): return ' '.join(shlex.quote(str(arg)) for arg in args)
+def _get_cmd(cmds: Iterable[str] | str): return cmds if isinstance(cmds, str) else _shlex_quote(cmds)
 def _get_domain(url: str): return url.split("://")[1].split("/")[0]
 def _strip(s: str): return s.strip() if s else ''
 
@@ -186,7 +196,7 @@ def reset_git(
         p = _call(cmd)
 
 
-def pip(args: Sequence[str] | str = 'install numpy'):
+def pip(args: Iterable[str] | str = 'install numpy'):
     '''24.3.1'''
     cmds = ['pip', _get_cmd(args), '-i', PIP[0], '--timeout', TIMEOUT]
     return _call(cmds)
@@ -205,16 +215,16 @@ def reset_pip():
 
 
 def global_conda(urls: dict | None = None):
-    _call(f'{MAMBA} clean -i')
+    _call(f'{_EXE_CONDA} clean -i')
     if urls is None:
         urls = CONDA[0]
     main: list[str] = urls.pop('main', [])
     custom: dict[str, list[str]] = urls
     for url in main:
-        _call(f'{MAMBA} config prepend channels {url}')
+        _call(f'{_EXE_CONDA} config prepend channels {url}')
     for channel, _urls in custom.items():
         for url in _urls:
-            _call(f'{MAMBA} config prepend channels {url}')
+            _call(f'{_EXE_CONDA} config prepend channels {url}')
 
 
 def pixi(*args: str):
@@ -267,35 +277,40 @@ _FUNCS = {
     if callable(func) and not name.startswith('_') and name not in _GLOBAL_FUNCS.keys() and name not in _RESET_FUNCS.keys()}
 
 
-def is_need_mirror(timeout=4.0):
-    global IS_MIRROR
+def Shuffle():
+    for key in GIT.keys():
+        shuffle(GIT[key])
+    shuffle(PIP)
+    shuffle(CONDA)
+    shuffle(GITHUB_RELEASE)
+
+
+def is_need_mirror(url='https://www.google.com', timeout=4.0):
     Log.info("检查是否需要镜像...")
     try:
-        with urlopen('https://www.google.com', timeout=timeout) as response:
+        with urlopen(url, timeout=timeout) as response:
             if response.status != 200:
-                raise Exception("Google is not reachable")
+                raise Exception(f"{url} is not reachable")
             else:
-                IS_MIRROR = False
                 GITHUB_RELEASE.insert(0, ['https://github.com', '美国', '[官方Github]'])
-        return IS_MIRROR
+        return False
     except:
         Log.info("🪞 使用镜像")
-        IS_MIRROR = True
-        _run_funcs(_GLOBAL_FUNCS.values())
-        return IS_MIRROR
+        return True
 
 
 CONCURRENT = 12
 TIMEOUT = 10
-_KW_PARSE = {'nargs': '*', 'metavar': '命令 COMMAND', 'default': None}
+_KW_PARSE = {'nargs': '*', 'metavar': ' '.join(_GLOBAL_FUNCS.keys()), 'default': None}
 
 
 def argParser():
-    parser = argparse.ArgumentParser(description=f'国内镜像源助手 Mirror Helper 🧙🪄 🪞 🌐\t{__version__}', usage=__doc__)
+    Log.info(f'{__name__} {__version__}')
+    parser = argparse.ArgumentParser(description=f'国内镜像源助手 Mirror CN 🧙🪄 🪞 🌐', usage=__doc__)
     parser.add_argument(
         '-y', '--smart', action='store_true', help=f'⭐ 无人值守智能判断，仅当访问谷歌超过4秒时设置镜像')
     parser.add_argument(
-        '--all', action='store_true', help='设置所有镜像源 Set all mirrors')
+        '-s', '--set', **_KW_PARSE, help='仅设置选定的全局镜像源 Set global mirrors for selected programs')
     parser.add_argument(
         '-r', '--reset', '--remove', **_KW_PARSE, help='移除全局镜像源，走官方源 Remove(reset) mirrors in global config')
     parser.add_argument(
@@ -316,14 +331,6 @@ def argParser():
     return ns, args
 
 
-def Shuffle():
-    for key in GIT.keys():
-        shuffle(GIT[key])
-    shuffle(PIP)
-    shuffle(CONDA)
-    shuffle(GITHUB_RELEASE)
-
-
 def main():
     global CONCURRENT, TIMEOUT
     ns, args = argParser()
@@ -331,58 +338,73 @@ def main():
         CONCURRENT = ns.concurrent
     if ns.timeout:
         TIMEOUT = ns.timeout
-    Log.debug(f'{globals()=}')
+    Log.debug(f'{os.environ=}\t{locals()=}')
     Shuffle()
     if ns.smart:
         is_need_mirror()
-    elif isinstance(ns.reset, Sequence):
-        if ns.reset:
-            funcs = _get_funcs(ns.reset, _RESET_FUNCS)
-            _run_funcs(funcs)
+        set_mirror()
+        return
+    if isinstance(ns.list, Iterable):
+        import json
+        is_pretty = '--list' in sys.argv
+        kw = {'ensure_ascii': False, 'indent': 2}
+        if ns.list:
+            for exe in ns.list:
+                _LIST = globals().get(exe.upper(), {})
+                _LIST = json.dumps(_LIST, **kw) if is_pretty else _LIST
+                Log.info(f'{exe} 镜像源 Mirrors: {_LIST}') if _LIST else exit(404)
         else:
-            Log.debug('reset all')
-            _run_funcs(_RESET_FUNCS.values())
-    else:
-        if isinstance(ns.list, Sequence):
-            if ns.list:
-                for exe in ns.list:
-                    _LIST = globals().get(exe.upper(), None)
-                    Log.info(f'{exe} 镜像源 Mirrors: {_LIST}') if _LIST else exit(404)
-            else:
-                Log.info(f'所有镜像源 All mirrors: {ALL}')
-        # if ns.test:
-        #     for exe in ns.test:
-        #         ...
-        if args:
-            funcs = _get_funcs(args, _GLOBAL_FUNCS)
-            if funcs:
-                Log.debug('all')
-                _run_funcs(funcs)
-            elif args[0] == 'git' and args[1] == 'clone':   # TODO: more actions support?
-                Log.debug('git')
-                git(*args[1:])
-            else:
-                Log.debug('temp')
-                func = globals().get(args[0], None)
-                if func and callable(func):
-                    func(args[1:])
-                else:
-                    Log.error(f'{args[0]}: 暂未支持或拼写错误。Unimplemented, check your spelling?')
+            _ALL = json.dumps(ALL, **kw) if is_pretty else ALL
+            Log.info(f'所有镜像源 All mirrors: {_ALL}')
+    if isinstance(ns.reset, Iterable):
+        Log.debug('reset')
+        reset_mirror(*ns.reset)
+    # if ns.test:
+    #     for exe in ns.test:
+    #         ...
+    if isinstance(ns.set, Iterable):
+        Log.debug('set')
+        set_mirror(*ns.set)
+        return
+    if args:
+        Log.debug('temp')
+        func = globals().get(args[0], None)
+        if func and callable(func):
+            func(args[1:])
+        else:
+            Log.error(f'{args[0]}: 暂未支持或拼写错误。Unimplemented or check your spelling?')
 
 
-def _run_funcs(funcs: Iterable[Callable]):
-    for func in funcs:
-        func()
+def set_mirror(*programes: str): return _run_funcs(_get_funcs(programes, _GLOBAL_FUNCS))
+def reset_mirror(*programes: str): return _run_funcs(_get_funcs(programes, _RESET_FUNCS))
+def _run_funcs(funcs: Iterable[Callable]): return [func() for func in funcs]
 
 
-def _get_funcs(keys_only: Sequence[str], KEYS_FUNCS=_GLOBAL_FUNCS) -> list[Callable]:
-    _keys = set(keys_only)
-    _KEYS = set(KEYS_FUNCS.keys())
-    names = _keys.intersection(_KEYS)
-    funcs = [KEYS_FUNCS[name] for name in names if callable(KEYS_FUNCS[name])]
-    Log.debug(f'{names=}\t{keys_only=}')
+def _get_funcs(keys: Iterable[str], KEYS_FUNCS: dict = _GLOBAL_FUNCS) -> list[Callable]:
+    '''check: ignore argparse unsupported
+
+    Args:
+        keys: user input as group A. **Fallback to `KEYS_FUNCS.keys()` if `keys` is empty**
+        KEYS_FUNCS: compared group B. You MUST check **ALL FUNCS are callable**!
+    '''
+    KEYS = KEYS_FUNCS.keys()
+    keys = _filter_exist_programs(keys if keys else KEYS)
+    names = set(keys).intersection(set(KEYS))
+    funcs = [KEYS_FUNCS[name] for name in names]
+    Log.debug(f'{locals()=}')
     return funcs
+
+
+def _filter_exist_programs(programes: Iterable[str]):
+    _progs = [prog for prog in programes if shutil.which(prog)]
+    not_found = set(programes) - set(_progs)
+    if not_found:
+        Log.warning(f'Ignored due to not in PATH: {not_found}')
+    Log.debug(f'Exist programes: {_progs}')
+    return _progs
 
 
 if __name__ == '__main__':
     main()
+
+Log.debug(f'{__name__} {__version__}')
