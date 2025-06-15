@@ -277,10 +277,12 @@ def is_need_mirror(timeout=4.0):
             else:
                 IS_MIRROR = False
                 GITHUB_RELEASE.insert(0, ['https://github.com', '美国', '[官方Github]'])
+        return IS_MIRROR
     except:
         Log.info("🪞 使用镜像")
         IS_MIRROR = True
         _run_funcs(_GLOBAL_FUNCS.values())
+        return IS_MIRROR
 
 
 CONCURRENT = 12
