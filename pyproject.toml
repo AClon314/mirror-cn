@@ -6,6 +6,9 @@ requires = ["setuptools>=61.0", "wheel"]
 authors = [
   {name = "AClon314", email = "aclon-e@qq.com"},
 ]
+dependencies = [
+  "mitmproxy",
+]
 description = "国内临时/永久镜像加速 CN mirrors sites to accelerate"
 keywords = ["mirror", "pixi", "conda", "pypi", "github", "git"]
 license = {file = "LICENSE"}

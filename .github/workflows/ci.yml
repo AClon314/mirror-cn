@@ -24,14 +24,17 @@ jobs:
 
     steps:
       #  This will remove unnecessary files to free up space. This has done because some package needs more space to install. e.g.) torch
-      - name: Clean up space for action
-        run: rm -rf /opt/hostedtoolcache
+      # - name: Clean up space for action
+      #   run: rm -rf /opt/hostedtoolcache
 
       - uses: actions/checkout@v4
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+
+      - name: Set mirror
+        run: python src/mirror_cn/mirror_cn.py --smart
 
       #  Install project dependencies with pytest and run tests
       - name: Install dependencies

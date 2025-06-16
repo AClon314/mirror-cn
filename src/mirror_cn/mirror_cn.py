@@ -1,19 +1,17 @@
 #!/bin/env python
 '''
-```python
-# See https://github.com/AClon314/mocap-wrapper/tree/master/src/mocap_wrapper/install/pixi.py for more useage
-from mirror_cn import Shuffle, is_need_mirror, set_mirror, reset_mirror
-Shuffle()           # randomize mirrors
-IS_MIRROR = is_need_mirror()  # check if need mirror
-set_mirror()        # set mirrors for all programs
-```
-
 %(prog)s git clone https://github.com/owner/repo.git   # temporary use github.com mirror
+%(prog)s https://github.com/owner/repo/release/latest or download/...   # replace `github.com` with mirror site
+%(prog)s ./install.sh   # replace `github.com` with mirror site in install script, and try to run it
 %(prog)s --set git pip...   # set mirrors for these commands
 %(prog)s --set      # set all mirrors
 %(prog)s -r         # remove all global mirrors
 %(prog)s -l         # list all mirrors
 %(prog)s -l git     # list git mirrors
+
+ENV VARS 可用的环境变量:
+- TIMEOUT: int = 10  # default timeout for network requests
+- CONCURRENT: int = 12  # default concurrent threads
 '''
 import os
 import re
@@ -26,7 +24,7 @@ import subprocess
 from random import shuffle
 from urllib.request import urlopen
 from time import localtime, strftime
-from typing import Callable, Iterable, Literal, Sequence
+from typing import Callable, Generator, Iterable, Literal, Sequence
 IS_DEBUG = os.getenv('GITHUB_ACTIONS', None) or os.getenv('LOG', None)
 _LEVEL = logging.DEBUG if IS_DEBUG else logging.INFO
 logging.basicConfig(level=_LEVEL, format='[%(asctime)s %(levelname)s] %(filename)s:%(lineno)s\t%(message)s', datefmt='%H:%M:%S')
@@ -122,6 +120,9 @@ CONDA = [
     }
 ]
 ALL = [GITHUB_RELEASE, GIT, PIP, CONDA]
+_GITHUB_RELEASE = (v[0] for v in GITHUB_RELEASE)
+_GIT = {k: iter(v[0]) for k, v in GIT.items()}
+_PIP = iter(PIP)
 __RE = {
     'symbol': r'[^\w_]+',
     'github': r'.*github\.com(/[^/]+/[^/]+)',
@@ -153,14 +154,24 @@ def _call(cmd: Sequence[str] | str, Print=True):
     return process
 
 
-def git(action='clone', url='https://github.com/owner/repo', *args: str):
+def _next(iterable, default=None):
+    try:
+        return next(iterable)
+    except StopIteration:
+        Log.error(f'{iterable=}已耗尽。')
+        return default
+
+
+def git(action='clone', url='https://github.com/owner/repo', *args: str) -> str | None:
     '''2.49.0'''
     if 'github.com' in url:
         owner_repo = _RE['github'].match(url)
         if not owner_repo:
             Log.error(f'Git URL 格式错误，无法解析 owner/repo: {url}')
             return
-        mirror = GIT['github.com'].pop(0)[0]
+        mirror = _next(_GIT['github.com'])
+        if mirror is None:
+            return
         owner_repo = str(owner_repo.group(1))
         _url = mirror + owner_repo
         p = _call(['git', action, _url, *args])
@@ -182,8 +193,10 @@ def global_git(
     loc: Literal['system', 'global', 'local', 'worktree', 'file'] = 'global'
 ):
     if to_mirror is None:
-        to_mirror = GIT[from_domain].pop(0)[0]
-    _call(f'git config --{loc}  url."{to_mirror}".insteadOf "https://{from_domain}"')
+        mirror = _next(_GIT[from_domain])
+    if mirror is None:
+        return
+    _call(f'git config --{loc}  url."{mirror}".insteadOf "https://{from_domain}"')
     # call(f'git config --{loc}  url."git@{to_mirror}:".insteadOf "git@{from_domain}:"')
 
 
@@ -204,7 +217,9 @@ def pip(args: Iterable[str] | str = 'install numpy'):
 
 def global_pip(to_mirror: str | None = None):
     if to_mirror is None:
-        to_mirror = PIP.pop(0)
+        to_mirror = _next(_PIP)
+    if to_mirror is None:
+        return
     _call(f'pip config set global.index-url {to_mirror}')
     _call(f'pip config set global.trusted-host {_get_domain(to_mirror)}')
 
@@ -243,7 +258,7 @@ def pixi(*args: str):
 def global_pixi(pypi: list[str] = PIP, toml_path: str | None = None):
     _args = [f'--manifest-path {toml_path}'] if toml_path else ['--global']
     pixi_prefix = 'pixi config set'.split(' ')
-    index_main = pypi.pop(0)
+    index_main = pypi.pop(0)    # TODO
     cmds = {
         'pypi-config.index-url': index_main,
         'pypi-config.extra-index-urls': str(pypi).replace('\'', '"'),
@@ -299,6 +314,42 @@ def is_need_mirror(url='https://www.google.com', timeout=4.0):
         return True
 
 
+def replace_github_with_mirror(file='./install.sh'):
+    ''' replace https://github.com to mirror site, return the replaced file path & shell invoke commands '''
+    with open(file, mode='rb') as f:
+        raw = f.read()
+    _file = f'_{file}'
+    github_com = b'https://github.com'
+    while github_mirror := _next(_GITHUB_RELEASE):
+        _github_mirror = github_mirror.encode('utf-8')
+        changed = raw.replace(github_com, _github_mirror)
+        with open(_file, mode='wb') as f:
+            f.write(changed)
+        yield _file, github_mirror
+
+
+def build_shell_cmds(file: str):
+    if file.endswith('.sh'):
+        cmds = ['sh', '-c', file]
+    elif file.endswith('.ps1'):
+        cmds = ['powershell', '-ExecutionPolicy', 'ByPass', '-File', file]
+    elif file.endswith('.bat') or file.endswith('.cmd'):
+        cmds = ['cmd', '/c', file]
+    else:
+        Log.error(f'Unsupported script suffix: {file}')
+        return
+    return cmds
+
+
+def try_script(file: str):
+    ''' for process in try_script('./install.sh') '''
+    for _file, mirror in replace_github_with_mirror(file):
+        cmds = build_shell_cmds(_file)
+        if cmds is None:
+            return
+        yield _call(cmds)
+
+
 CONCURRENT = 12
 TIMEOUT = 10
 _KW_PARSE = {'nargs': '*', 'metavar': ' '.join(_GLOBAL_FUNCS.keys()), 'default': None}
@@ -317,13 +368,6 @@ def argParser():
         '-l', '--list', **_KW_PARSE, help='镜像列表 Mirrors list')
     # parser.add_argument(
     #     '--test', '--rank', **_KW_PARSE, help='测试最快镜像 Test mirrors and rank them by speed')
-    parser.add_argument(
-        '-c', '--concurrent', nargs='?', type=int, default=CONCURRENT, metavar=str(CONCURRENT),
-        help='并发数 Concurrent requests')
-    parser.add_argument(
-        '-t', '--timeout', nargs='?', type=int, default=TIMEOUT, metavar=str(TIMEOUT),
-        help='超时秒数 Timeout seconds'
-    )
     ns, args = parser.parse_known_args()
     if len(sys.argv) < 2:
         parser.print_help()
@@ -334,10 +378,8 @@ def argParser():
 def main():
     global CONCURRENT, TIMEOUT
     ns, args = argParser()
-    if ns.concurrent:
-        CONCURRENT = ns.concurrent
-    if ns.timeout:
-        TIMEOUT = ns.timeout
+    CONCURRENT = int(os.environ.get('concurrent', CONCURRENT))
+    TIMEOUT = int(os.environ.get('timeout', TIMEOUT))
     Log.debug(f'{os.environ=}\t{locals()=}')
     Shuffle()
     if ns.smart:
@@ -366,7 +408,20 @@ def main():
         Log.debug('set')
         set_mirror(*ns.set)
         return
-    if args:
+    if len(args) == 1 and (url := args[0]) and os.path.exists(url):
+        Log.debug(f'try_script')
+        for p in try_script(url):
+            if p.returncode == 0:
+                return
+    elif url.startswith('https://github.com'):
+        Log.debug(f'github release')
+        if 'latest' in url:
+            # convert latest to tag
+            ...
+        while github_mirror := _next(_GITHUB_RELEASE):
+            _url = url.replace('https://github.com', github_mirror)
+            print(_url)
+    else:
         Log.debug('temp')
         func = globals().get(args[0], None)
         if func and callable(func):
