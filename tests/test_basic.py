@@ -12,7 +12,7 @@ Log = getLogger(__name__)
     ]
 )
 def test_git(url: str):
-    mirror_url = git('clone', url=url)
+    mirror_url = git('clone', url)
     assert mirror_url is not None
 
 
