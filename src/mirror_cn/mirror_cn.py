@@ -175,7 +175,7 @@ def git(action='clone', url='https://github.com/owner/repo', *args: str) -> str 
         owner_repo = str(owner_repo.group(1))
         _url = mirror + owner_repo
         p = _call(['git', action, _url, *args])
-        if any([err in p.stderr for err in ('404', 'not found', 'not accessible')]):
+        if any([err in p.stderr for err in ('The requested URL returned error', 'not accessible')]):
             return git(action, url, *args)  # retry
 
         repo = owner_repo.split('/')[-1]
@@ -400,8 +400,8 @@ def main():
     Log.debug(f'{os.environ=}\t{locals()=}')
     Shuffle()
     if ns.smart:
-        is_need_mirror()
-        set_mirror()
+        IS_MIRROR = is_need_mirror()
+        set_mirror() if IS_MIRROR else Log.info('不需要镜像源。No need to set mirrors.')
         return
     if isinstance(ns.list, Iterable):
         import json

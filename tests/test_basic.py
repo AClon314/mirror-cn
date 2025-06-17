@@ -31,14 +31,14 @@ def test_pixi():
         for p in try_script(file):
             if p.returncode == 0:
                 break
+    path = re.search(r"is installed into '(/.*?)'", p.stdout)
+    path = path.group(1) if path else None
+    if not path:
+        assert False, "Failed to extract path from stdout"
+    Log.info(f'{path=}')
     # warn: Could not detect shell type.
     # Please permanently add '/root/.pixi/bin' to your $PATH to enable the 'pixi' command.
     if p and 'PATH' in p.stderr:
-        path = re.search(r"'(/.*?)'", p.stderr)
-        path = path.group(1) if path else None
-        if not path:
-            assert False, "Failed to extract path from stderr"
-        Log.info(f'{path=}')
         _export = f'export PATH=$PATH:{path}'
         _bashrc = os.path.expanduser('~/.bashrc')
         if os.path.exists(_bashrc):
@@ -48,6 +48,5 @@ def test_pixi():
                 Log.info(f'Adding to {_bashrc}: {_export}')
         with open(_bashrc, 'a') as f:
             f.write(f'\n{_export}\n')
-        os.environ['PATH'] += f':{path}'
-    if not shutil.which('pixi'):
-        assert False, "pixi command not found"
+    if not os.path.exists(path):
+        assert False, "Failed to install pixi"
