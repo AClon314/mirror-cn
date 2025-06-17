@@ -1,7 +1,7 @@
 #!/bin/env python
 '''
 %(prog)s git clone https://github.com/owner/repo.git   # temporary use github.com mirror
-%(prog)s https://github.com/owner/repo/release/latest or download/...   # list: replace `github.com` with mirror site
+%(prog)s https://github.com/owner/repo/releases/latest or download/...   # list: replace `github.com` with mirror site
 %(prog)s ./install.sh   # replace `github.com` with mirror site in install script, and try to run it
 %(prog)s --set git pip...   # set mirrors for these commands
 %(prog)s --set      # set all mirrors
@@ -125,10 +125,10 @@ _GIT = {k: iter(v) for k, v in _GIT.items()}
 _PIP = iter(PIP)
 __RE = {
     'symbol': r'[^\w_]+',
-    'github': r'.*github\.com(/[^/]+/[^/]+)',
+    'github': r'.*github\.com/([^/]+/[^/]+)',
 }
 _RE = {k: re.compile(v) for k, v in __RE.items()}
-def _shlex_quote(args: Iterable[str]): return ' '.join(shlex.quote(str(arg)) for arg in args)
+def _shlex_quote(args: Iterable[str]): return [shlex.quote(str(arg)) for arg in args]
 def _get_cmd(cmds: Iterable[str] | str): return cmds if isinstance(cmds, str) else _shlex_quote(cmds)
 def _get_domain(url: str): return url.split("://")[1].split("/")[0]
 def _strip(s: str): return s.strip() if s else ''
@@ -162,24 +162,25 @@ def _next(iterable, default=None):
         return default
 
 
-def git(action='clone', url='https://github.com/owner/repo', *args: str) -> str | None:
+def git(*args: str) -> str | None:
     '''2.49.0'''
-    if 'github.com' in url:
-        owner_repo = _RE['github'].match(url)
-        if not owner_repo:
-            Log.error(f'Git URL 格式错误，无法解析 owner/repo: {url}')
-            return
+    _args = list(args)
+    idxs = [i for i, arg in enumerate(_args) if 'github.com' in arg]
+    if idxs:
+        url = _args[idxs[0]]
+        owner_repo = _get_owner_repo(url)
         mirror = _next(_GIT['github.com'])
         if mirror is None:
             return
-        owner_repo = str(owner_repo.group(1))
         _url = mirror + owner_repo
-        p = _call(['git', action, _url, *args])
+        for i in idxs:
+            _args[i] = _url
+        p = _call(['git', *_args])
         if any([err in p.stderr for err in ('The requested URL returned error', 'not found', 'not accessible')]):
-            return git(action, url, *args)  # retry
+            return git(*_args)  # retry
 
         repo = owner_repo.split('/')[-1]
-        to_local = args[0] if len(args) > 0 else repo.replace('.git', '')
+        to_local = _args[0] if len(_args) > 0 else repo.replace('.git', '')
         os.chdir(to_local)
         p = _call(['git', 'remote', 'set-url', '--push', 'origin', url])
         return _url
@@ -209,9 +210,35 @@ def reset_git(
         p = _call(cmd)
 
 
-def pip(args: Iterable[str] | str = 'install numpy'):
+def uv(*args: str):
+    '''0.7.13'''
+    _args = list(args)
+    if all([s in _args for s in ('python', 'install')]):
+        mirror = _next(_GITHUB_RELEASE)
+        if mirror is None:
+            return
+        mirror += '/astral-sh/python-build-standalone/releases/download/'
+        cmds = ['uv', _get_cmd(args), '--mirror', mirror]
+    else:
+        index = _next(_PIP)
+        cmds = ['uv', _get_cmd(args), '--index', index]
+    _uv_env()
+    return _call(cmds)
+
+
+def global_uv(): return _uv_env()
+
+
+def reset_uv():
+    env = _uv_env()
+    for k in env.keys():
+        os.environ.pop(k, None)
+
+
+def pip(*args: str):
     '''24.3.1'''
-    cmds = ['pip', _get_cmd(args), '-i', PIP[0], '--timeout', TIMEOUT]
+    mirror = _next(_PIP)
+    cmds = ['pip', _get_cmd(args), '-i', mirror, '--timeout', TIMEOUT]
     return _call(cmds)
 
 
@@ -229,28 +256,9 @@ def reset_pip():
     _call('pip config unset global.trusted-host')
 
 
-def global_conda(urls: dict | None = None):
-    _call(f'{_EXE_CONDA} clean -i')
-    if urls is None:
-        urls = CONDA[0]
-    main: list[str] = urls.pop('main', [])
-    custom: dict[str, list[str]] = urls
-    for url in main:
-        _call(f'{_EXE_CONDA} config prepend channels {url}')
-    for channel, _urls in custom.items():
-        for url in _urls:
-            _call(f'{_EXE_CONDA} config prepend channels {url}')
-
-
 def pixi(*args: str):
     '''0.48.1'''
-    env = {
-        'UV_HTTP_TIMEOUT': str(TIMEOUT),
-        'UV_DEFAULT_INDEX': PIP[0],
-        'UV_INSECURE_HOST': _get_domain(PIP[0]),
-    }
-    for k, v in env.items():
-        os.environ[k] = v
+    _uv_env()
     cmds = ['pixi', _get_cmd(args)]
     return _call(cmds)
 
@@ -280,6 +288,19 @@ def reset_pixi(toml_path: str | None = None):
         _call(pixi_prefix + _args + [cmd])
 
 
+def global_conda(urls: dict | None = None):
+    _call(f'{_EXE_CONDA} clean -i')
+    if urls is None:
+        urls = CONDA[0]
+    main: list[str] = urls.pop('main', [])
+    custom: dict[str, list[str]] = urls
+    for url in main:
+        _call(f'{_EXE_CONDA} config prepend channels {url}')
+    for channel, _urls in custom.items():
+        for url in _urls:
+            _call(f'{_EXE_CONDA} config prepend channels {url}')
+
+
 def _get_global_funcs(prefix='global_'): return {
     name.replace(prefix, ''): func for name, func in globals().items()
     if name.startswith(prefix) and callable(func)}
@@ -290,6 +311,28 @@ _RESET_FUNCS = _get_global_funcs(prefix='reset_')
 _FUNCS = {
     name: func for name, func in globals().items()
     if callable(func) and not name.startswith('_') and name not in _GLOBAL_FUNCS.keys() and name not in _RESET_FUNCS.keys()}
+
+
+def _get_owner_repo(url):
+    owner_repo = _RE['github'].match(url)
+    if not owner_repo:
+        raise Exception(f'Git URL 格式错误，无法解析 owner/repo: {url}')
+    owner_repo = str(owner_repo.group(1))
+    return owner_repo
+
+
+def _uv_env():
+    _pip = _next(_PIP)
+    _index = {'UV_DEFAULT_INDEX': _pip} if _pip else {}
+    env = {
+        'UV_HTTP_TIMEOUT': str(TIMEOUT),
+        'UV_REQUEST_TIMEOUT': str(TIMEOUT),
+        'UV_INSECURE_HOST': _get_domain(PIP[0]),
+        **_index,
+    }
+    for k, v in env.items():
+        os.environ[k] = v
+    return env
 
 
 def Shuffle():
@@ -348,14 +391,10 @@ def build_shell_cmds(file: str):
 def get_latest_release_tag(owner_repo='prefix-dev/pixi') -> str:
     import json
     url = f"https://api.github.com/repos/{owner_repo}/releases/latest"
-    try:
-        with urlopen(url, timeout=TIMEOUT) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            return data['tag_name']
-    except Exception as e:
-        tag = 'v0.48.2'   # 2025-6-16
-        Log.warning(f"Failed to fetch latest release tag, fallback to {tag=}: {e}")
-        return tag
+    Log.debug(f'{url=}')
+    with urlopen(url, timeout=TIMEOUT) as response:
+        data = json.loads(response.read().decode('utf-8'))
+        return data['tag_name']
 
 
 def try_script(file: str):
@@ -431,10 +470,11 @@ def main():
             if p.returncode == 0:
                 return
     elif url.startswith('https://github.com'):
-        Log.debug(f'github release')
+        Log.debug(f'github releases')
         if 'latest' in url:
-            # convert latest to tag
-            ...
+            owner_repo = _get_owner_repo(url)
+            tag = get_latest_release_tag(owner_repo)
+            url = url.replace('/latest', '').replace('download', f'download/{tag}')
         while github_mirror := _next(_GITHUB_RELEASE):
             _url = url.replace('https://github.com', github_mirror)
             print(_url)

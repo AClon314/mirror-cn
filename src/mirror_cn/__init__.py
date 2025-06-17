@@ -15,6 +15,15 @@ for process in try_script('./install.sh'):
       with open('./install.sh', 'w') as f:
         f.write() # Your fail logic here
         ...
+
+try:
+    from mirror_cn import *
+except ImportError:
+    if os.path.exists('mirror_cn.py'):
+        raise
+    Log.debug('❗ mirror_cn module not found, fixing...')
+    download('https://gitee.com/aclon314/mirror-cn/raw/main/src/mirror_cn/mirror_cn.py', 'mirror_cn.py')
+    os.execvp('python', ['python','mirror_cn.py'])
 ```
 '''
 from mirror_cn.mirror_cn import *

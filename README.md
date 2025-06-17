@@ -25,7 +25,7 @@ mirror --list
 mirror --help
 ```
 
-See [pixi.py](https://github.com/AClon314/mocap-wrapper/tree/master/src/mocap_wrapper/install/pixi.py) or [test.py](https://github.com/AClon314/mirror-cn/blob/main/tests/test_basic.py) for more usage
+See [pixi.py](https://github.com/AClon314/mocap-wrapper/tree/master/src/mocap_wrapper/install/pixi.py) or [test.py](./tests/test_basic.py) for more usage
 
 ```python
 from mirror_cn import Shuffle, is_need_mirror, set_mirror, reset_mirror, try_script
@@ -57,5 +57,5 @@ except ImportError:
         raise
     Log.debug('❗ mirror_cn module not found, fixing...')
     download('https://gitee.com/aclon314/mirror-cn/raw/main/src/mirror_cn/mirror_cn.py', 'mirror_cn.py')
-    os.execvp(_PYTHON, _ARGV)
+    os.execvp('python', ['python','mirror_cn.py'])
 ```
