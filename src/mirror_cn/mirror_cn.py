@@ -104,7 +104,6 @@ GIT = {
 PIP = [
     'https://pypi.tuna.tsinghua.edu.cn/simple',  # 清华
     'https://mirrors.aliyun.com/pypi/simple',  # 阿里云
-    'http://pypi.hustunique.com/simple',  # 华中科技大学
     'http://mirrors.cloud.tencent.com/pypi/simple/',  # 腾讯云
     'https://pypi.mirrors.ustc.edu.cn/simple/',  # 中国科学技术大学
 ]
@@ -318,9 +317,13 @@ def replace_github_with_mirror(file='./install.sh'):
     ''' replace https://github.com to mirror site, return the replaced file path & shell invoke commands '''
     with open(file, mode='rb') as f:
         raw = f.read()
-    _file = f'_{file}'
+    _dir = os.path.dirname(file)
+    _file = f'_{os.path.basename(file)}'
+    _file = os.path.join(_dir, _file)
+    os.chmod(_file, 0o755) if file.endswith('.sh') else None
     github_com = b'https://github.com'
     while github_mirror := _next(_GITHUB_RELEASE):
+        Log.info(f'{github_mirror=}')
         _github_mirror = github_mirror.encode('utf-8')
         changed = raw.replace(github_com, _github_mirror)
         with open(_file, mode='wb') as f:
@@ -339,6 +342,19 @@ def build_shell_cmds(file: str):
         Log.error(f'Unsupported script suffix: {file}')
         return
     return cmds
+
+
+def get_latest_release_tag(owner_repo='prefix-dev/pixi') -> str:
+    import json
+    url = f"https://api.github.com/repos/{owner_repo}/releases/latest"
+    try:
+        with urlopen(url, timeout=TIMEOUT) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            return data['tag_name']
+    except Exception as e:
+        tag = 'v0.48.2'   # 2025-6-16
+        Log.warning(f"Failed to fetch latest release tag, fallback to {tag=}: {e}")
+        return tag
 
 
 def try_script(file: str):
