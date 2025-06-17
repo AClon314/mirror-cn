@@ -95,9 +95,9 @@ GITHUB_RELEASE = [
 GIT = {
     'github.com': [
         # ['https://gitclone.com/github.com', '国内', '[中国 国内] - 该公益加速源由 [GitClone] 提供 - 缓存：有 - 首次比较慢，缓存后较快'],
+        ['https://githubfast.com', '韩国', '[韩国] - 该公益加速源由 [Github Fast] 提供'],
         ['https://kkgithub.com', '香港', '[中国香港、日本、新加坡等] - 该公益加速源由 [help.kkgithub.com] 提供'],
         ['https://ghfast.top/https://github.com', '韩国', '[日本、韩国、新加坡、美国、德国等]（CDN 不固定） - 该公益加速源由 [ghproxy] 提供'],
-        ['https://githubfast.com', '韩国', '[韩国] - 该公益加速源由 [Github Fast] 提供'],
         ['https://ghproxy.net/https://github.com', '日本', '[日本 大阪] - 该公益加速源由 [ghproxy.net] 提供'],
     ]
 }
@@ -120,7 +120,8 @@ CONDA = [
 ]
 ALL = [GITHUB_RELEASE, GIT, PIP, CONDA]
 _GITHUB_RELEASE = (v[0] for v in GITHUB_RELEASE)
-_GIT = {k: iter(v[0]) for k, v in GIT.items()}
+_GIT = {k: [_[0] for _ in v] for k, v in GIT.items()}
+_GIT = {k: iter(v) for k, v in _GIT.items()}
 _PIP = iter(PIP)
 __RE = {
     'symbol': r'[^\w_]+',
@@ -320,7 +321,6 @@ def replace_github_with_mirror(file='./install.sh'):
     _dir = os.path.dirname(file)
     _file = f'_{os.path.basename(file)}'
     _file = os.path.join(_dir, _file)
-    os.chmod(_file, 0o755) if file.endswith('.sh') else None
     github_com = b'https://github.com'
     while github_mirror := _next(_GITHUB_RELEASE):
         Log.info(f'{github_mirror=}')
@@ -328,6 +328,7 @@ def replace_github_with_mirror(file='./install.sh'):
         changed = raw.replace(github_com, _github_mirror)
         with open(_file, mode='wb') as f:
             f.write(changed)
+        os.chmod(_file, 0o755)
         yield _file, github_mirror
 
 
