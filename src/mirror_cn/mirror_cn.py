@@ -172,7 +172,7 @@ def git(*args: str) -> str | None:
         mirror = _next(_GIT['github.com'])
         if mirror is None:
             return
-        _url = mirror + owner_repo
+        _url = f'{mirror}/{owner_repo}'
         for i in idxs:
             _args[i] = _url
         p = _call(['git', *_args])
