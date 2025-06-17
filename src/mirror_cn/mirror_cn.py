@@ -1,7 +1,7 @@
 #!/bin/env python
 '''
 %(prog)s git clone https://github.com/owner/repo.git   # temporary use github.com mirror
-%(prog)s https://github.com/owner/repo/release/latest or download/...   # replace `github.com` with mirror site
+%(prog)s https://github.com/owner/repo/release/latest or download/...   # list: replace `github.com` with mirror site
 %(prog)s ./install.sh   # replace `github.com` with mirror site in install script, and try to run it
 %(prog)s --set git pip...   # set mirrors for these commands
 %(prog)s --set      # set all mirrors
@@ -29,7 +29,7 @@ IS_DEBUG = os.getenv('GITHUB_ACTIONS', None) or os.getenv('LOG', None)
 _LEVEL = logging.DEBUG if IS_DEBUG else logging.INFO
 logging.basicConfig(level=_LEVEL, format='[%(asctime)s %(levelname)s] %(filename)s:%(lineno)s\t%(message)s', datefmt='%H:%M:%S')
 _ID = -1
-_EXE_CONDA = 'mamba'
+_EXE_CONDA = 'mamba' if shutil.which('mamba') else 'conda'
 Log = logging.getLogger(__name__)
 def version(): return (datetime.fromtimestamp(os.path.getmtime(__file__), tz=timezone.utc)).strftime('%Y.%m.%d.%H.%M')
 
