@@ -23,15 +23,15 @@ import argparse
 import subprocess
 from random import shuffle
 from urllib.request import urlopen
-from time import localtime, strftime
-from typing import Callable, Generator, Iterable, Literal, Sequence
+from datetime import datetime, timezone
+from typing import Callable, Iterable, Literal, Sequence
 IS_DEBUG = os.getenv('GITHUB_ACTIONS', None) or os.getenv('LOG', None)
 _LEVEL = logging.DEBUG if IS_DEBUG else logging.INFO
 logging.basicConfig(level=_LEVEL, format='[%(asctime)s %(levelname)s] %(filename)s:%(lineno)s\t%(message)s', datefmt='%H:%M:%S')
 _ID = -1
 _EXE_CONDA = 'mamba'
 Log = logging.getLogger(__name__)
-def version(): return strftime('%Y.%m.%d.%H.%M', localtime(os.path.getmtime(__file__)))
+def version(): return (datetime.fromtimestamp(os.path.getmtime(__file__), tz=timezone.utc)).strftime('%Y.%m.%d.%H.%M')
 
 
 __version__ = f'v{version()}'
@@ -175,7 +175,7 @@ def git(action='clone', url='https://github.com/owner/repo', *args: str) -> str 
         owner_repo = str(owner_repo.group(1))
         _url = mirror + owner_repo
         p = _call(['git', action, _url, *args])
-        if any([err in p.stderr for err in ('The requested URL returned error', 'not accessible')]):
+        if any([err in p.stderr for err in ('The requested URL returned error', 'not found', 'not accessible')]):
             return git(action, url, *args)  # retry
 
         repo = owner_repo.split('/')[-1]
