@@ -151,11 +151,11 @@ def _call(cmd: Sequence[str] | str, Print=True, **kwargs):
     Log.info(f'{prefix}🐣❯ {cmd}') if Print else None
     try:
         process = subprocess.run(cmd, shell=shell, text=True, capture_output=True, check=True, **kwargs)
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         process = e
     if Print:
-        stdout = _strip(process.stdout)
-        stderr = _strip(process.stderr)
+        stdout = _strip(str(process.stdout))
+        stderr = _strip(str(process.stderr))
         Log.info(f'{prefix}❯ {stdout}') if stdout else None
         Log.error(f'{prefix}❯ {stderr}') if stderr else None
     return process

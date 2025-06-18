@@ -19,7 +19,7 @@ python ./mirror_cn.py --help
 ## Usage 用法
 ```sh
 mirror git clone http://github.com/AClon314/mirror-cn   # 临时走镜像
-mirror git pip pixi conda   # 等价于 mirror --all，永久设置镜像
+mirror --set git pip pixi conda   # 等价于 mirror --all，永久设置镜像
 mirror --reset  # 移除镜像设置
 mirror --list
 mirror --help
