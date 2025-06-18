@@ -138,6 +138,7 @@ def _shlex_quote(args: Iterable[str]): return [shlex.quote(str(arg)) for arg in 
 def _get_cmd(cmds: Iterable[str] | str): return cmds if isinstance(cmds, str) else _shlex_quote(cmds)
 def _get_domain(url: str): return url.split("://")[1].split("/")[0]
 def _strip(s: str): return s.strip() if s else ''
+def _returncode(process): return getattr(process, 'returncode', None)
 
 
 def _call(cmd: Sequence[str] | str, Print=True, **kwargs):
@@ -185,7 +186,7 @@ def git(*args: str, retry=True, **kwargs) -> str | None:
         for i in idxs_github:
             args_modified[i] = mirror_url
         p = _call(['git', *args_modified], **kwargs)
-        if p.returncode != 0:
+        if _returncode(p) != 0:
             return git(*args, **kwargs) if retry else None
 
         cmds = ['git', 'remote', 'set-url', '--push', 'origin', url]
@@ -206,7 +207,7 @@ def git(*args: str, retry=True, **kwargs) -> str | None:
                 args_modified.append(mirror_url)
         Log.debug(f'{locals()=}')
         p = _call(['git', *args_modified], **kwargs)
-        if p.returncode != 0:
+        if _returncode(p) != 0:
             return git(*args, **kwargs) if retry else None
 
 
@@ -345,7 +346,7 @@ def git_ls_remote():
     return {'origin': {'fetch': 'https://github.com/owner/repo', 'push': 'https://github.com/owner/repo'}}
     ```'''
     p = _call(['git', 'remote', '-v'], Print=False)
-    lines = p.stdout.strip().splitlines()
+    lines = p.stdout.strip().splitlines() if p.stdout else []
     remote = {}
     for line in lines:
         inline = line.split()
@@ -504,7 +505,7 @@ def main():
         if os.path.exists(url):
             Log.debug(f'try_script')
             for p in try_script(url):
-                if p.returncode == 0:
+                if _returncode(p) == 0:
                     return
         elif args[0].startswith(_HTTPS_GITHUB_COM):
             if 'releases' in args[0]:
