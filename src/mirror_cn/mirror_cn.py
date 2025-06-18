@@ -135,15 +135,16 @@ def _strip(s: str): return s.strip() if s else ''
 
 
 def _call(cmd: Sequence[str] | str, Print=True):
-    '''⚠️ Strongly recommended use list[str] instead of str to pass commands, 
+    '''⚠️ Strongly recommended use list[str] instead of str to pass commands,
     to avoid shell injection risks for online service.'''
     global _ID
     _ID += 1
     prefix = f'{cmd[0]}_{_ID}'
-    cmd = _get_cmd(cmd)
+    shell = True if isinstance(cmd, str) else False
+    cmd = _get_cmd(cmd) if shell else cmd
     Log.info(f'{prefix}🐣❯ {cmd}') if Print else None
     try:
-        process = subprocess.run(cmd, shell=True, text=True, capture_output=True, check=True)
+        process = subprocess.run(cmd, shell=shell, text=True, capture_output=True, check=True)
     except subprocess.CalledProcessError as e:
         process = e
     if Print:
@@ -162,10 +163,10 @@ def _next(iterable, default=None):
         return default
 
 
-def git(*args: str) -> str | None:
+def git(*args: str, retry=True) -> str | None:
     '''2.49.0'''
     _args = list(args)
-    idxs = [i for i, arg in enumerate(_args) if 'github.com' in arg]
+    idxs = [i for i, a in enumerate(args) if a.startswith('https://github.com')]
     if idxs:
         url = _args[idxs[0]]
         owner_repo = _get_owner_repo(url)
@@ -177,28 +178,34 @@ def git(*args: str) -> str | None:
             _args[i] = _url
         p = _call(['git', *_args])
         if any([err in p.stderr for err in ('The requested URL returned error', 'not found', 'not accessible')]):
-            return git(*_args)  # retry
+            return git(*args) if retry else None
 
         repo = owner_repo.split('/')[-1]
-        to_local = _args[0] if len(_args) > 0 else repo.replace('.git', '')
+        to_local = repo.replace('.git', '')
         os.chdir(to_local)
         p = _call(['git', 'remote', 'set-url', '--push', 'origin', url])
         return _url
     else:
-        Log.warning(f'Git URL 不包含 github.com，无法使用镜像源: {url}')
+        Log.warning(f'Git URL 不包含 github.com，无法使用镜像源: {locals()=}')
+        _call(['git', *args])
 
 
 def global_git(
     to_mirror: str | None = None,
     from_domain='github.com',
     loc: Literal['system', 'global', 'local', 'worktree', 'file'] = 'global'
-):
+) -> str | None:
     if to_mirror is None:
         mirror = _next(_GIT[from_domain])
     if mirror is None:
         return
-    _call(f'git config --{loc}  url."{mirror}".insteadOf "https://{from_domain}"')
-    # call(f'git config --{loc}  url."git@{to_mirror}:".insteadOf "git@{from_domain}:"')
+    m = git('clone', 'AClon314/mirror-cn', retry=False)
+    if m:
+        _call(f'git config --{loc}  url."{mirror}".insteadOf "https://{from_domain}"')
+        # call(f'git config --{loc}  url."git@{to_mirror}:".insteadOf "git@{from_domain}:"')
+        return mirror
+    else:
+        return global_git()
 
 
 def reset_git(
@@ -269,8 +276,8 @@ def global_pixi(pypi: list[str] = PIP, toml_path: str | None = None):
     index_main = pypi.pop(0)    # TODO
     cmds = {
         'pypi-config.index-url': index_main,
-        'pypi-config.extra-index-urls': str(pypi).replace('\'', '"'),
-        'mirrors': str(CONDA[0]).replace('\'', '"'),
+        'pypi-config.extra-index-urls': str(pypi).replace("'", '"'),
+        'mirrors': str(CONDA[0]).replace("'", '"'),
     }
     for k, v in cmds.items():
         _call(pixi_prefix + _args + [k, v])
@@ -408,20 +415,19 @@ def try_script(file: str):
 
 CONCURRENT = 12
 TIMEOUT = 10
-_KW_PARSE = {'nargs': '*', 'metavar': ' '.join(_GLOBAL_FUNCS.keys()), 'default': None}
 
 
 def argParser():
-    Log.info(f'{__name__} {__version__}')
-    parser = argparse.ArgumentParser(description=f'国内镜像源助手 Mirror CN 🧙🪄 🪞 🌐', usage=__doc__)
+    Log.info(f'{__name__} {__version__}') if not IS_DEBUG else None
+    parser = argparse.ArgumentParser(description=f'国内镜像源助手 Mirror CN 🧙🪄 🪞 🌐, 支持 {" ".join(_GLOBAL_FUNCS.keys())}', usage=__doc__)
     parser.add_argument(
         '-y', '--smart', action='store_true', help=f'⭐ 无人值守智能判断，仅当访问谷歌超过4秒时设置镜像')
     parser.add_argument(
-        '-s', '--set', **_KW_PARSE, help='仅设置选定的全局镜像源 Set global mirrors for selected programs')
+        '-s', '--set', action='store_true', help='仅设置选定的全局镜像源 Set global mirrors for selected programs')
     parser.add_argument(
-        '-r', '--reset', '--remove', **_KW_PARSE, help='移除全局镜像源，走官方源 Remove(reset) mirrors in global config')
+        '-r', '--reset', '--remove', action='store_true', help='移除全局镜像源，走官方源 Remove(reset) mirrors in global config')
     parser.add_argument(
-        '-l', '--list', **_KW_PARSE, help='镜像列表 Mirrors list')
+        '-l', '--list', action='store_true', help='镜像列表 Mirrors list')
     # parser.add_argument(
     #     '--test', '--rank', **_KW_PARSE, help='测试最快镜像 Test mirrors and rank them by speed')
     ns, args = parser.parse_known_args()
@@ -442,47 +448,49 @@ def main():
         IS_MIRROR = is_need_mirror()
         set_mirror() if IS_MIRROR else Log.info('不需要镜像源。No need to set mirrors.')
         return
-    if isinstance(ns.list, Iterable):
+    if ns.list:
         import json
         is_pretty = '--list' in sys.argv
         kw = {'ensure_ascii': False, 'indent': 2}
-        if ns.list:
-            for exe in ns.list:
+        if args:
+            for exe in args:
                 _LIST = globals().get(exe.upper(), {})
                 _LIST = json.dumps(_LIST, **kw) if is_pretty else _LIST
                 Log.info(f'{exe} 镜像源 Mirrors: {_LIST}') if _LIST else exit(404)
         else:
             _ALL = json.dumps(ALL, **kw) if is_pretty else ALL
             Log.info(f'所有镜像源 All mirrors: {_ALL}')
-    if isinstance(ns.reset, Iterable):
+    if ns.reset:
         Log.debug('reset')
-        reset_mirror(*ns.reset)
+        reset_mirror(*args)
     # if ns.test:
-    #     for exe in ns.test:
+    #     for exe in args:
     #         ...
-    if isinstance(ns.set, Iterable):
+    if ns.set:
         Log.debug('set')
-        set_mirror(*ns.set)
+        set_mirror(*args)
         return
-    if len(args) == 1 and (url := args[0]) and os.path.exists(url):
-        Log.debug(f'try_script')
-        for p in try_script(url):
-            if p.returncode == 0:
-                return
-    elif url.startswith('https://github.com'):
-        Log.debug(f'github releases')
-        if 'latest' in url:
-            owner_repo = _get_owner_repo(url)
-            tag = get_latest_release_tag(owner_repo)
-            url = url.replace('/latest', '').replace('download', f'download/{tag}')
-        while github_mirror := _next(_GITHUB_RELEASE):
-            _url = url.replace('https://github.com', github_mirror)
-            print(_url)
-    else:
+    if len(args) == 1:
+        url = args[0]
+        if os.path.exists(url):
+            Log.debug(f'try_script')
+            for p in try_script(url):
+                if p.returncode == 0:
+                    return
+        elif args[0].startswith('https://github.com'):
+            Log.debug(f'github releases')
+            if 'latest' in url:
+                owner_repo = _get_owner_repo(url)
+                tag = get_latest_release_tag(owner_repo)
+                url = url.replace('/latest', '').replace('download', f'download/{tag}')
+            while github_mirror := _next(_GITHUB_RELEASE):
+                _url = url.replace('https://github.com', github_mirror)
+                print(_url)
+    elif len(args) > 0:
         Log.debug('temp')
         func = globals().get(args[0], None)
         if func and callable(func):
-            func(args[1:])
+            func(*args[1:])
         else:
             Log.error(f'{args[0]}: 暂未支持或拼写错误。Unimplemented or check your spelling?')
 
