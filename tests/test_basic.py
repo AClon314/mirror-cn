@@ -1,6 +1,6 @@
 import re
 import pytest
-from mirror_cn import git, try_script, get_latest_release_tag, Shuffle
+from mirror_cn import git, try_script, get_latest_release_tag
 from logging import getLogger
 Log = getLogger(__name__)
 
