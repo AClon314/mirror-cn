@@ -23,7 +23,6 @@ def test_pixi():
     from urllib.request import urlretrieve
     socket.setdefaulttimeout(10)
     if not shutil.which('pixi'):
-        Shuffle()
         file, _ = urlretrieve('https://pixi.sh/install.sh', filename='./install.sh')
         Log.info(f'{file=}')
         tag = get_latest_release_tag()

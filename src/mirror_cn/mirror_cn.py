@@ -95,10 +95,10 @@ GITHUB_RELEASE = [
 GIT = {
     'github.com': [
         # ['https://gitclone.com/github.com', '国内', '[中国 国内] - 该公益加速源由 [GitClone] 提供 - 缓存：有 - 首次比较慢，缓存后较快'],
-        ['https://githubfast.com', '韩国', '[韩国] - 该公益加速源由 [Github Fast] 提供'],
-        ['https://kkgithub.com', '香港', '[中国香港、日本、新加坡等] - 该公益加速源由 [help.kkgithub.com] 提供'],
         ['https://ghfast.top/https://github.com', '韩国', '[日本、韩国、新加坡、美国、德国等]（CDN 不固定） - 该公益加速源由 [ghproxy] 提供'],
         ['https://ghproxy.net/https://github.com', '日本', '[日本 大阪] - 该公益加速源由 [ghproxy.net] 提供'],
+        ['https://githubfast.com', '韩国', '[韩国] - 该公益加速源由 [Github Fast] 提供'],
+        ['https://kkgithub.com', '香港', '[中国香港、日本、新加坡等] - 该公益加速源由 [help.kkgithub.com] 提供'],
     ]
 }
 PIP = [
@@ -119,6 +119,12 @@ CONDA = [
     }
 ]
 ALL = [GITHUB_RELEASE, GIT, PIP, CONDA]
+_HTTPS_GITHUB_COM = 'https://github.com'
+for key in GIT.keys():
+    shuffle(GIT[key])
+shuffle(PIP)
+shuffle(CONDA)
+shuffle(GITHUB_RELEASE)
 _GITHUB_RELEASE = (v[0] for v in GITHUB_RELEASE)
 _GIT = {k: [_[0] for _ in v] for k, v in GIT.items()}
 _GIT = {k: iter(v) for k, v in _GIT.items()}
@@ -134,7 +140,7 @@ def _get_domain(url: str): return url.split("://")[1].split("/")[0]
 def _strip(s: str): return s.strip() if s else ''
 
 
-def _call(cmd: Sequence[str] | str, Print=True):
+def _call(cmd: Sequence[str] | str, Print=True, **kwargs):
     '''⚠️ Strongly recommended use list[str] instead of str to pass commands,
     to avoid shell injection risks for online service.'''
     global _ID
@@ -144,7 +150,7 @@ def _call(cmd: Sequence[str] | str, Print=True):
     cmd = _get_cmd(cmd) if shell else cmd
     Log.info(f'{prefix}🐣❯ {cmd}') if Print else None
     try:
-        process = subprocess.run(cmd, shell=shell, text=True, capture_output=True, check=True)
+        process = subprocess.run(cmd, shell=shell, text=True, capture_output=True, check=True, **kwargs)
     except subprocess.CalledProcessError as e:
         process = e
     if Print:
@@ -163,31 +169,45 @@ def _next(iterable, default=None):
         return default
 
 
-def git(*args: str, retry=True) -> str | None:
+def git(*args: str, retry=True, **kwargs) -> str | None:
     '''2.49.0'''
-    _args = list(args)
-    idxs = [i for i, a in enumerate(args) if a.startswith('https://github.com')]
-    if idxs:
-        url = _args[idxs[0]]
+    GIT_ERR = ('The requested URL returned error', 'not found', 'not accessible')
+    args_modified = list(args)
+    mirror = _next(_GIT['github.com'])
+    if mirror is None:
+        return
+    idxs_github = [i for i, a in enumerate(args) if a.startswith(_HTTPS_GITHUB_COM)]
+    idxs_http = [i for i, a in enumerate(args) if a.startswith('http')]
+    if idxs_github:
+        url = args_modified[idxs_github[0]]
         owner_repo = _get_owner_repo(url)
-        mirror = _next(_GIT['github.com'])
-        if mirror is None:
-            return
-        _url = f'{mirror}/{owner_repo}'
-        for i in idxs:
-            _args[i] = _url
-        p = _call(['git', *_args])
-        if any([err in p.stderr for err in ('The requested URL returned error', 'not found', 'not accessible')]):
-            return git(*args) if retry else None
+        mirror_url = f'{mirror}/{owner_repo}'
+        for i in idxs_github:
+            args_modified[i] = mirror_url
+        p = _call(['git', *args_modified], **kwargs)
+        if p.returncode != 0:
+            return git(*args, **kwargs) if retry else None
 
+        cmds = ['git', 'remote', 'set-url', '--push', 'origin', url]
         repo = owner_repo.split('/')[-1]
         to_local = repo.replace('.git', '')
-        os.chdir(to_local)
-        p = _call(['git', 'remote', 'set-url', '--push', 'origin', url])
-        return _url
+        if os.path.exists(to_local):
+            os.chdir(to_local)
+            p = _call(cmds)
+        else:
+            Log.warning(f'Skip push set. Maybe you need run `{" ".join(cmds)}` if `git push` failed.')
+        return mirror_url
     else:
-        Log.warning(f'Git URL 不包含 github.com，无法使用镜像源: {locals()=}')
-        _call(['git', *args])
+        remote = git_ls_remote()
+        push = remote.get('origin', {}).get('push', None)
+        if push and push.startswith(_HTTPS_GITHUB_COM):
+            mirror_url = push.replace(_HTTPS_GITHUB_COM, mirror)
+            if not idxs_http and 'pull' in args:    # TODO: not only `git pull`
+                args_modified.append(mirror_url)
+        Log.debug(f'{locals()=}')
+        p = _call(['git', *args_modified], **kwargs)
+        if p.returncode != 0:
+            return git(*args, **kwargs) if retry else None
 
 
 def global_git(
@@ -199,7 +219,7 @@ def global_git(
         mirror = _next(_GIT[from_domain])
     if mirror is None:
         return
-    m = git('clone', 'AClon314/mirror-cn', retry=False)
+    m = git('ls-remote', 'https://github.com/AClon314/mirror-cn', retry=False, timeout=TIMEOUT)
     if m:
         _call(f'git config --{loc}  url."{mirror}".insteadOf "https://{from_domain}"')
         # call(f'git config --{loc}  url."git@{to_mirror}:".insteadOf "git@{from_domain}:"')
@@ -320,6 +340,24 @@ _FUNCS = {
     if callable(func) and not name.startswith('_') and name not in _GLOBAL_FUNCS.keys() and name not in _RESET_FUNCS.keys()}
 
 
+def git_ls_remote():
+    '''```
+    return {'origin': {'fetch': 'https://github.com/owner/repo', 'push': 'https://github.com/owner/repo'}}
+    ```'''
+    p = _call(['git', 'remote', '-v'], Print=False)
+    lines = p.stdout.strip().splitlines()
+    remote = {}
+    for line in lines:
+        inline = line.split()
+        if len(inline) == 3:
+            name, url, fetch_push = inline
+            fetch_push = fetch_push[1:-1]  # no ()
+            if name not in remote.keys():
+                remote[name] = {}
+            remote[name] = {**remote[name], fetch_push: url}
+    return remote
+
+
 def _get_owner_repo(url):
     owner_repo = _RE['github'].match(url)
     if not owner_repo:
@@ -342,14 +380,6 @@ def _uv_env():
     return env
 
 
-def Shuffle():
-    for key in GIT.keys():
-        shuffle(GIT[key])
-    shuffle(PIP)
-    shuffle(CONDA)
-    shuffle(GITHUB_RELEASE)
-
-
 def is_need_mirror(url='https://www.google.com', timeout=4.0):
     Log.info("检查是否需要镜像...")
     try:
@@ -357,7 +387,7 @@ def is_need_mirror(url='https://www.google.com', timeout=4.0):
             if response.status != 200:
                 raise Exception(f"{url} is not reachable")
             else:
-                GITHUB_RELEASE.insert(0, ['https://github.com', '美国', '[官方Github]'])
+                GITHUB_RELEASE.insert(0, [_HTTPS_GITHUB_COM, '美国', '[官方Github]'])
         return False
     except:
         Log.info("🪞 使用镜像")
@@ -414,7 +444,7 @@ def try_script(file: str):
 
 
 CONCURRENT = 12
-TIMEOUT = 10
+TIMEOUT = 8
 
 
 def argParser():
@@ -443,7 +473,6 @@ def main():
     CONCURRENT = int(os.environ.get('concurrent', CONCURRENT))
     TIMEOUT = int(os.environ.get('timeout', TIMEOUT))
     Log.debug(f'{os.environ=}\t{locals()=}')
-    Shuffle()
     if ns.smart:
         IS_MIRROR = is_need_mirror()
         set_mirror() if IS_MIRROR else Log.info('不需要镜像源。No need to set mirrors.')
@@ -477,15 +506,21 @@ def main():
             for p in try_script(url):
                 if p.returncode == 0:
                     return
-        elif args[0].startswith('https://github.com'):
-            Log.debug(f'github releases')
-            if 'latest' in url:
-                owner_repo = _get_owner_repo(url)
-                tag = get_latest_release_tag(owner_repo)
-                url = url.replace('/latest', '').replace('download', f'download/{tag}')
-            while github_mirror := _next(_GITHUB_RELEASE):
-                _url = url.replace('https://github.com', github_mirror)
-                print(_url)
+        elif args[0].startswith(_HTTPS_GITHUB_COM):
+            if 'releases' in args[0]:
+                Log.debug(f'github releases')
+                if 'latest' in url:
+                    owner_repo = _get_owner_repo(url)
+                    tag = get_latest_release_tag(owner_repo)
+                    url = url.replace('/latest', '').replace('download', f'download/{tag}')
+                while mirror := _next(_GITHUB_RELEASE):
+                    _url = url.replace(_HTTPS_GITHUB_COM, mirror)
+                    print(_url)
+            else:
+                Log.debug(f'github')
+                while mirror := _next(_GIT['github.com']):
+                    _url = url.replace(_HTTPS_GITHUB_COM, mirror)
+                    print(_url)
     elif len(args) > 0:
         Log.debug('temp')
         func = globals().get(args[0], None)
