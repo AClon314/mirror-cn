@@ -138,10 +138,9 @@ def _shlex_quote(args: Iterable[str]): return [shlex.quote(str(arg)) for arg in 
 def _get_cmd(cmds: Iterable[str] | str): return cmds if isinstance(cmds, str) else _shlex_quote(cmds)
 def _get_domain(url: str): return url.split("://")[1].split("/")[0]
 def _strip(s: str): return s.strip() if s else ''
-def _returncode(process): return getattr(process, 'returncode', None)
 
 
-def _call(cmd: Sequence[str] | str, Print=True, **kwargs):
+def _call(cmd: Sequence[str] | str, Print=True, **kwargs) -> subprocess.CompletedProcess[str]:
     '''⚠️ Strongly recommended use list[str] instead of str to pass commands,
     to avoid shell injection risks for online service.'''
     global _ID
@@ -154,12 +153,12 @@ def _call(cmd: Sequence[str] | str, Print=True, **kwargs):
         process = subprocess.run(cmd, shell=shell, text=True, capture_output=True, check=True, **kwargs)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         process = e
+    process.stdout = _strip(str(process.stdout))  # type: ignore
+    process.stderr = _strip(str(process.stderr))  # type: ignore
     if Print:
-        stdout = _strip(str(process.stdout))
-        stderr = _strip(str(process.stderr))
-        Log.info(f'{prefix}❯ {stdout}') if stdout else None
-        Log.error(f'{prefix}❯ {stderr}') if stderr else None
-    return process
+        Log.info(f'{prefix}❯ {process.stdout}') if process.stdout else None
+        Log.error(f'{prefix}❯ {process.stderr}') if process.stderr else None
+    return process  # type: ignore
 
 
 def _next(iterable, default=None):
@@ -186,7 +185,7 @@ def git(*args: str, retry=True, **kwargs) -> str | None:
         for i in idxs_github:
             args_modified[i] = mirror_url
         p = _call(['git', *args_modified], **kwargs)
-        if _returncode(p) != 0:
+        if p.returncode != 0:
             return git(*args, **kwargs) if retry else None
 
         cmds = ['git', 'remote', 'set-url', '--push', 'origin', url]
@@ -207,7 +206,7 @@ def git(*args: str, retry=True, **kwargs) -> str | None:
                 args_modified.append(mirror_url)
         Log.debug(f'{locals()=}')
         p = _call(['git', *args_modified], **kwargs)
-        if _returncode(p) != 0:
+        if p.returncode != 0:
             return git(*args, **kwargs) if retry else None
 
 
@@ -505,7 +504,7 @@ def main():
         if os.path.exists(url):
             Log.debug(f'try_script')
             for p in try_script(url):
-                if _returncode(p) == 0:
+                if p.returncode == 0:
                     return
         elif args[0].startswith(_HTTPS_GITHUB_COM):
             if 'releases' in args[0]:
