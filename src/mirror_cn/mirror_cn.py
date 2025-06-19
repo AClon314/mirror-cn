@@ -373,9 +373,10 @@ def _uv_env():
         mirror = None
     else:
         mirror += '/astral-sh/python-build-standalone/releases/download/'
-    mirror = {'UV_PYTHON_BUILD_MIRROR': mirror} if mirror else {}
+    mirror = {'UV_PYTHON_INSTALL_MIRROR': mirror} if mirror else {}
 
     env = {
+        'HTTP_TIMEOUT': str(TIMEOUT),
         'UV_HTTP_TIMEOUT': str(TIMEOUT),
         'UV_REQUEST_TIMEOUT': str(TIMEOUT),
         'UV_INSECURE_HOST': _get_domain(PIP[0]),
