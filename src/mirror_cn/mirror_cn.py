@@ -140,7 +140,7 @@ def _get_domain(url: str): return url.split("://")[1].split("/")[0]
 def _strip(s: str): return s.strip() if s else ''
 
 
-def _call(cmd: Sequence[str] | str, Print=True, **kwargs) -> subprocess.CompletedProcess[str]:
+def run(cmd: Sequence[str] | str, Print=True, **kwargs) -> subprocess.CompletedProcess[str]:
     '''⚠️ Strongly recommended use list[str] instead of str to pass commands,
     to avoid shell injection risks for online service.'''
     global _ID
@@ -184,7 +184,7 @@ def git(*args: str, retry=True, **kwargs) -> str | None:
         mirror_url = f'{mirror}/{owner_repo}'
         for i in idxs_github:
             args_modified[i] = mirror_url
-        p = _call(['git', *args_modified], **kwargs)
+        p = run(['git', *args_modified], **kwargs)
         if p.returncode != 0:
             return git(*args, **kwargs) if retry else None
 
@@ -193,7 +193,7 @@ def git(*args: str, retry=True, **kwargs) -> str | None:
         to_local = repo.replace('.git', '')
         if os.path.exists(to_local):
             os.chdir(to_local)
-            p = _call(cmds)
+            p = run(cmds)
         else:
             Log.warning(f'Skip push set. Maybe you need run `{" ".join(cmds)}` if `git push` failed.')
         return mirror_url
@@ -205,7 +205,7 @@ def git(*args: str, retry=True, **kwargs) -> str | None:
             if not idxs_http and 'pull' in args:    # TODO: not only `git pull`
                 args_modified.append(mirror_url)
         Log.debug(f'{locals()=}')
-        p = _call(['git', *args_modified], **kwargs)
+        p = run(['git', *args_modified], **kwargs)
         if p.returncode != 0:
             return git(*args, **kwargs) if retry else None
 
@@ -221,7 +221,7 @@ def global_git(
         return
     m = git('ls-remote', 'https://github.com/AClon314/mirror-cn', retry=False, timeout=TIMEOUT)
     if m:
-        _call(f'git config --{loc}  url."{mirror}".insteadOf "https://{from_domain}"')
+        run(f'git config --{loc}  url."{mirror}".insteadOf "https://{from_domain}"')
         # call(f'git config --{loc}  url."git@{to_mirror}:".insteadOf "git@{from_domain}:"')
         return mirror
     else:
@@ -234,7 +234,7 @@ def reset_git(
     for mirror in GIT['github.com']:
         mirror = mirror[0]
         cmd = f'git config --{loc} --unset url."{mirror}".insteadOf'
-        p = _call(cmd)
+        p = run(cmd)
 
 
 def uv(*args: str):
@@ -250,7 +250,7 @@ def uv(*args: str):
         index = _next(_PIP)
         cmds = ['uv', _get_cmd(args), '--index', index]
     _uv_env()
-    return _call(cmds)
+    return run(cmds)
 
 
 def global_uv(): return _uv_env()
@@ -266,7 +266,7 @@ def pip(*args: str):
     '''24.3.1'''
     mirror = _next(_PIP)
     cmds = ['pip', _get_cmd(args), '-i', mirror, '--timeout', TIMEOUT]
-    return _call(cmds)
+    return run(cmds)
 
 
 def global_pip(to_mirror: str | None = None):
@@ -274,20 +274,20 @@ def global_pip(to_mirror: str | None = None):
         to_mirror = _next(_PIP)
     if to_mirror is None:
         return
-    _call(f'pip config set global.index-url {to_mirror}')
-    _call(f'pip config set global.trusted-host {_get_domain(to_mirror)}')
+    run(f'pip config set global.index-url {to_mirror}')
+    run(f'pip config set global.trusted-host {_get_domain(to_mirror)}')
 
 
 def reset_pip():
-    _call('pip config unset global.index-url')
-    _call('pip config unset global.trusted-host')
+    run('pip config unset global.index-url')
+    run('pip config unset global.trusted-host')
 
 
 def pixi(*args: str):
     '''0.48.1'''
     _uv_env()
     cmds = ['pixi', _get_cmd(args)]
-    return _call(cmds)
+    return run(cmds)
 
 
 def global_pixi(pypi: list[str] = PIP, toml_path: str | None = None):
@@ -300,7 +300,7 @@ def global_pixi(pypi: list[str] = PIP, toml_path: str | None = None):
         'mirrors': str(CONDA[0]).replace("'", '"'),
     }
     for k, v in cmds.items():
-        _call(pixi_prefix + _args + [k, v])
+        run(pixi_prefix + _args + [k, v])
 
 
 def reset_pixi(toml_path: str | None = None):
@@ -312,20 +312,20 @@ def reset_pixi(toml_path: str | None = None):
         'mirrors',
     ]
     for cmd in cmds:
-        _call(pixi_prefix + _args + [cmd])
+        run(pixi_prefix + _args + [cmd])
 
 
 def global_conda(urls: dict | None = None):
-    _call(f'{_EXE_CONDA} clean -i')
+    run(f'{_EXE_CONDA} clean -i')
     if urls is None:
         urls = CONDA[0]
     main: list[str] = urls.pop('main', [])
     custom: dict[str, list[str]] = urls
     for url in main:
-        _call(f'{_EXE_CONDA} config prepend channels {url}')
+        run(f'{_EXE_CONDA} config prepend channels {url}')
     for channel, _urls in custom.items():
         for url in _urls:
-            _call(f'{_EXE_CONDA} config prepend channels {url}')
+            run(f'{_EXE_CONDA} config prepend channels {url}')
 
 
 def _get_global_funcs(prefix='global_'): return {
@@ -344,7 +344,7 @@ def git_ls_remote():
     '''```
     return {'origin': {'fetch': 'https://github.com/owner/repo', 'push': 'https://github.com/owner/repo'}}
     ```'''
-    p = _call(['git', 'remote', '-v'], Print=False)
+    p = run(['git', 'remote', '-v'], Print=False)
     lines = p.stdout.strip().splitlines() if p.stdout else []
     remote = {}
     for line in lines:
@@ -440,7 +440,7 @@ def try_script(file: str):
         cmds = build_shell_cmds(_file)
         if cmds is None:
             return
-        yield _call(cmds)
+        yield run(cmds)
 
 
 CONCURRENT = 12
