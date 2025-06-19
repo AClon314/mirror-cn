@@ -244,8 +244,8 @@ def reset_git(
 
 def uv(*args: str):
     '''0.7.13'''
-    _uv_env() if _IS_MIRROR else None
-    return run(args)
+    _uv_env()
+    return run(['uv', *args])
 
 
 def global_uv():
@@ -262,17 +262,18 @@ def reset_uv():
 def pip(*args: str):
     '''24.3.1'''
     mirror = _next(_PIP)
-    cmds = ['pip', _get_cmd(args), '-i', mirror, '--timeout', TIMEOUT]
-    return run(cmds)
-
-
-def global_pip(to_mirror: str | None = None):
-    if to_mirror is None:
-        to_mirror = _next(_PIP)
-    if to_mirror is None:
+    if mirror is None:
         return
-    run(f'pip config set global.index-url {to_mirror}')
-    run(f'pip config set global.trusted-host {_get_domain(to_mirror)}')
+    return run(['pip', *args, '-i', mirror, f'--timeout={TIMEOUT}',])
+
+
+def global_pip(mirror: str | None = None):
+    if mirror is None:
+        mirror = _next(_PIP)
+    if mirror is None:
+        return
+    run(f'pip config set global.index-url {mirror}')
+    run(f'pip config set global.trusted-host {_get_domain(mirror)}')
 
 
 def reset_pip():
@@ -283,7 +284,7 @@ def reset_pip():
 def pixi(*args: str):
     '''0.48.1'''
     _uv_env()
-    cmds = ['pixi', _get_cmd(args)]
+    cmds = ['pixi', *args]
     return run(cmds)
 
 
