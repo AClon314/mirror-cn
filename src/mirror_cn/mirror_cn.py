@@ -138,7 +138,7 @@ _RE = {k: re.compile(v) for k, v in __RE.items()}
 def _shlex_quote(args: Iterable[str]): return [shlex.quote(str(arg)) for arg in args]
 def _get_cmd(cmds: Iterable[str] | str): return cmds if isinstance(cmds, str) else _shlex_quote(cmds)
 def _get_domain(url: str): return url.split("://")[1].split("/")[0]
-def _strip(s: str): return s.strip() if s else ''
+def _strip(s): return str(s).strip() if s else ''
 
 
 def run(cmd: Sequence[str] | str, Print=True, **kwargs) -> subprocess.CompletedProcess[str]:
@@ -152,10 +152,14 @@ def run(cmd: Sequence[str] | str, Print=True, **kwargs) -> subprocess.CompletedP
     Log.info(f'{prefix}🐣❯ {cmd}') if Print else None
     try:
         process = subprocess.run(cmd, shell=shell, text=True, capture_output=True, check=True, **kwargs)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+    except subprocess.CalledProcessError as e:
         process = e
-    process.stdout = _strip(str(process.stdout))  # type: ignore
-    process.stderr = _strip(str(process.stderr))  # type: ignore
+    except subprocess.TimeoutExpired as e:
+        process = e
+        process.returncode = 128 + 15  # SIGTERM # type: ignore
+    Log.debug(f'{locals()=}')
+    process.stderr = _strip(process.stderr)  # type: ignore
+    process.stdout = _strip(process.stdout)  # type: ignore
     if Print:
         Log.info(f'{prefix}❯ {process.stdout}') if process.stdout else None
         Log.error(f'{prefix}❯ {process.stderr}') if process.stderr else None

@@ -1,8 +1,22 @@
 import re
 import pytest
-from mirror_cn import git, try_script, get_latest_release_tag
+from mirror_cn import git, run, try_script, get_latest_release_tag
 from logging import getLogger
 Log = getLogger(__name__)
+
+
+@pytest.mark.parametrize(
+    "cmds",
+    [
+        ['sleep', '1'],
+        ['sleep', '3'],
+        'sleep 1',
+    ]
+)
+def test_run(cmds):
+    # TODO: `yes`` command will stuck python process, because it will output amounts of 'y'
+    p = run(cmds, timeout=2)
+    Log.info(f'{p.__dict__=}')
 
 
 @pytest.mark.parametrize(
