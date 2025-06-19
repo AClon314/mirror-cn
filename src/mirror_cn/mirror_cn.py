@@ -29,6 +29,7 @@ IS_DEBUG = os.getenv('GITHUB_ACTIONS', None) or os.getenv('LOG', None)
 _LEVEL = logging.DEBUG if IS_DEBUG else logging.INFO
 logging.basicConfig(level=_LEVEL, format='[%(asctime)s %(levelname)s] %(filename)s:%(lineno)s\t%(message)s', datefmt='%H:%M:%S')
 _ID = -1
+_IS_MIRROR = None
 _EXE_CONDA = 'mamba' if shutil.which('mamba') else 'conda'
 Log = logging.getLogger(__name__)
 def version(): return (datetime.fromtimestamp(os.path.getmtime(__file__), tz=timezone.utc)).strftime('%Y.%m.%d.%H.%M')
@@ -239,21 +240,13 @@ def reset_git(
 
 def uv(*args: str):
     '''0.7.13'''
-    _args = list(args)
-    if all([s in _args for s in ('python', 'install')]):
-        mirror = _next(_GITHUB_RELEASE)
-        if mirror is None:
-            return
-        mirror += '/astral-sh/python-build-standalone/releases/download/'
-        cmds = ['uv', _get_cmd(args), '--mirror', mirror]
-    else:
-        index = _next(_PIP)
-        cmds = ['uv', _get_cmd(args), '--index', index]
-    _uv_env()
-    return run(cmds)
+    _uv_env() if _IS_MIRROR else None
+    return run(args)
 
 
-def global_uv(): return _uv_env()
+def global_uv():
+    '''only set ENV vars, return ENV vars'''
+    return _uv_env()
 
 
 def reset_uv():
@@ -369,18 +362,29 @@ def _get_owner_repo(url):
 def _uv_env():
     _pip = _next(_PIP)
     _index = {'UV_DEFAULT_INDEX': _pip} if _pip else {}
+
+    mirror = _next(_GITHUB_RELEASE)
+    if mirror is None:
+        mirror = None
+    else:
+        mirror += '/astral-sh/python-build-standalone/releases/download/'
+    mirror = {'UV_PYTHON_BUILD_MIRROR': mirror} if mirror else {}
+
     env = {
         'UV_HTTP_TIMEOUT': str(TIMEOUT),
         'UV_REQUEST_TIMEOUT': str(TIMEOUT),
         'UV_INSECURE_HOST': _get_domain(PIP[0]),
         **_index,
+        **mirror,
     }
     for k, v in env.items():
         os.environ[k] = v
+    Log.debug(f'{locals()=}')
     return env
 
 
 def is_need_mirror(url='https://www.google.com', timeout=4.0):
+    global _IS_MIRROR
     Log.info("检查是否需要镜像...")
     try:
         with urlopen(url, timeout=timeout) as response:
@@ -388,10 +392,10 @@ def is_need_mirror(url='https://www.google.com', timeout=4.0):
                 raise Exception(f"{url} is not reachable")
             else:
                 GITHUB_RELEASE.insert(0, [_HTTPS_GITHUB_COM, '美国', '[官方Github]'])
-        return False
+        return _IS_MIRROR := False
     except:
         Log.info("🪞 使用镜像")
-        return True
+        return _IS_MIRROR := True
 
 
 def replace_github_with_mirror(file='./install.sh'):
