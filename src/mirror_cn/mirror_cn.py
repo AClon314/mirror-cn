@@ -392,10 +392,12 @@ def is_need_mirror(url='https://www.google.com', timeout=4.0):
                 raise Exception(f"{url} is not reachable")
             else:
                 GITHUB_RELEASE.insert(0, [_HTTPS_GITHUB_COM, '美国', '[官方Github]'])
-        return _IS_MIRROR := False
+        _IS_MIRROR = False
+        return _IS_MIRROR
     except:
         Log.info("🪞 使用镜像")
-        return _IS_MIRROR := True
+        _IS_MIRROR = True
+        return _IS_MIRROR
 
 
 def replace_github_with_mirror(file='./install.sh'):
