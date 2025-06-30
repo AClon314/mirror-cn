@@ -12,6 +12,7 @@
 ENV VARS 可用的环境变量:
 - TIMEOUT: int = 10  # default timeout for network requests
 - CONCURRENT: int = 12  # default concurrent threads
+- GITHUB_TOKEN: str = ""  # GitHub Personal Access Token for API requests (5000/hour limit), https://github.com/settings/tokens/new
 '''
 import os
 import re
@@ -31,13 +32,44 @@ logging.basicConfig(level=_LEVEL, format='[%(asctime)s %(levelname)s] %(filename
 _ID = -1
 _IS_MIRROR = None
 _EXE_CONDA = 'mamba' if shutil.which('mamba') else 'conda'
+_GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 Log = logging.getLogger(__name__)
 def version(): return (datetime.fromtimestamp(os.path.getmtime(__file__), tz=timezone.utc)).strftime('%Y.%m.%d.%H.%M')
 
 
 __version__ = f'v{version()}'
-
+_GITHUB_AKAMS_CN = [
+    # https://uptime.akams.cn/status/philanthropy
+    'https://gh.llkk.cc',
+    'https://ghproxy.net',
+    'https://gitproxy.click',
+    'https://github.moeyy.xyz',
+    'https://github.tbedu.top',
+    'https://github.whrstudio.top',
+    'https://github.proxy.class3.fun',
+    'https://github-proxy.lixxing.top',
+    'https://ghf.无名氏.top',
+    'https://ghm.078465.xyz',
+    'https://gh-proxy.net',
+    'https://j.1win.ggff.net',
+    # 'https://gh-deno.mocn.top',
+    'https://git.yylx.win',
+    'https://tvv.tw',
+    # 'https://github.kongkuang.top',
+    'https://gp-us.fyan.top',
+    'https://gitproxy.127731.xyz',
+    'https://github.acmsz.top',
+    'https://github.cmsz.dpdns.org',
+    # 'https://github.iomi.team',
+    'https://ghproxy.fangkuai.fun',
+    'https://ghfile.geekertao.top',
+    'https://github.dpik.top',
+    'https://gh.dpik.top',
+    'https://github.3x25.com',
+]
+_GITHUB_AKAMS_CN = [[g + '/https://github.com', '', 'https://github.akams.cn/'] for g in _GITHUB_AKAMS_CN]
 GITHUB_RELEASE = [
+    # https://scriptcat.org/scripts/code/900/Github%20Enhancement%20-%20High%20Speed%20Download.user.js
     ['https://gh.h233.eu.org/https://github.com', '美国', '[美国 Cloudflare CDN] - 该公益加速源由 [@X.I.U/XIU2] 提供'],
     ['https://ghproxy.1888866.xyz/https://github.com', '美国', '[美国 Cloudflare CDN] - 该公益加速源由 [WJQSERVER-STUDIO/ghproxy] 提供'],
     ['https://gh.ddlc.top/https://github.com', '美国', '[美国 Cloudflare CDN] - 该公益加速源由 [@mtr-static-official] 提供'],
@@ -92,7 +124,7 @@ GITHUB_RELEASE = [
     ['https://ghfast.top/https://github.com', '其他', '[日本、韩国、新加坡、美国、德国等]（CDN 不固定） - 该公益加速源由 [ghproxy.link] 提供提示：希望大家尽量多使用美国节点（每次随机 负载均衡），避免流量都集中到亚洲公益节点，减少成本压力，公益才能更持久~'],
     # ['https://wget.la/https://github.com', '其他', '[中国香港、中国台湾、日本、美国等]（CDN 不固定） - 该公益加速源由 [ucdn.me] 提供提示：希望大家尽量多使用美国节点（每次随机 负载均衡），避免流量都集中到亚洲公益节点，减少成本压力，公益才能更持久~'],
     ['https://kkgithub.com', '其他', '[中国香港、日本、韩国、新加坡等] - 该公益加速源由 [help.kkgithub.com] 提供提示：希望大家尽量多使用美国节点（每次随机 负载均衡），避免流量都集中到亚洲公益节点，减少成本压力，公益才能更持久~'],
-]
+] + _GITHUB_AKAMS_CN
 GIT = {
     'github.com': [
         # ['https://gitclone.com/github.com', '国内', '[中国 国内] - 该公益加速源由 [GitClone] 提供 - 缓存：有 - 首次比较慢，缓存后较快'],
@@ -100,7 +132,7 @@ GIT = {
         ['https://ghproxy.net/https://github.com', '日本', '[日本 大阪] - 该公益加速源由 [ghproxy.net] 提供'],
         ['https://githubfast.com', '韩国', '[韩国] - 该公益加速源由 [Github Fast] 提供'],
         ['https://kkgithub.com', '香港', '[中国香港、日本、新加坡等] - 该公益加速源由 [help.kkgithub.com] 提供'],
-    ]
+    ] + _GITHUB_AKAMS_CN,
 }
 PIP = [
     'https://pypi.tuna.tsinghua.edu.cn/simple',  # 清华
@@ -407,7 +439,7 @@ def is_need_mirror(url='https://www.google.com', timeout=4.0):
 
 
 def replace_github_with_mirror(file='./install.sh'):
-    ''' replace https://github.com to mirror site, return the replaced file path & shell invoke commands '''
+    ''' replace https://github.com to mirror site, return the replaced file path & mirror site'''
     with open(file, mode='rb') as f:
         raw = f.read()
     _dir = os.path.dirname(file)
@@ -420,7 +452,6 @@ def replace_github_with_mirror(file='./install.sh'):
         changed = raw.replace(github_com, _github_mirror)
         with open(_file, mode='wb') as f:
             f.write(changed)
-        os.chmod(_file, 0o755)
         yield _file, github_mirror
 
 
@@ -437,21 +468,35 @@ def build_shell_cmds(file: str):
     return cmds
 
 
-def get_latest_release_tag(owner_repo='prefix-dev/pixi') -> str:
+def get_latest_release_tag(owner_repo='prefix-dev/pixi', token: str | None = None) -> str:
+    '''header: https://docs.github.com/zh/rest/authentication/authenticating-to-the-rest-api?apiVersion=2022-11-28  
+    create GITHUB_TOKEN: https://github.com/settings/tokens/new'''
     import json
-    url = f"https://api.github.com/repos/{owner_repo}/releases/latest"
-    Log.debug(f'{url=}')
-    with urlopen(url, timeout=TIMEOUT) as response:
-        data = json.loads(response.read().decode('utf-8'))
-        return data['tag_name']
+    from urllib.request import Request
+    from urllib.error import HTTPError
+    if token is None:
+        token = _GITHUB_TOKEN
+    URL = f"https://api.github.com/repos/{owner_repo}/releases/latest"
+    headers = {'Authorization': f'Bearer {token}', 'X-GitHub-Api-Version': '2022-11-28'}
+    url = Request(URL, headers=headers) if token else URL
+    Log.debug(f'{locals()=}')
+    try:
+        with urlopen(url, timeout=TIMEOUT) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            return data['tag_name']
+    except HTTPError as e:
+        if 'rate limit' in e.reason:
+            Log.error(f"Try to change IP address or not using VPN, or set `GITHUB_TOKEN` env var (create at https://github.com/settings/tokens/new ).")
+        raise
 
 
-def try_script(file: str):
+def try_script(file: str, chmod: int | None = 0o755):
     ''' for process in try_script('./install.sh') '''
     for _file, mirror in replace_github_with_mirror(file):
         cmds = build_shell_cmds(_file)
         if cmds is None:
             return
+        os.chmod(_file, chmod) if chmod else None
         yield run(cmds)
 
 
