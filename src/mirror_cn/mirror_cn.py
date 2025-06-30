@@ -10,6 +10,7 @@
 %(prog)s -l git     # list git mirrors
 
 ENV VARS 可用的环境变量:
+- IS_MIRROR: int  # 设置此项以跳过is_need_mirror检查
 - TIMEOUT: int = 10  # default timeout for network requests
 - CONCURRENT: int = 12  # default concurrent threads
 - GITHUB_TOKEN: str = ""  # GitHub Personal Access Token for API requests (5000/hour limit), https://github.com/settings/tokens/new
@@ -30,7 +31,6 @@ IS_DEBUG = os.getenv('GITHUB_ACTIONS', None) or os.getenv('LOG', None)
 _LEVEL = logging.DEBUG if IS_DEBUG else logging.INFO
 logging.basicConfig(level=_LEVEL, format='[%(asctime)s %(levelname)s] %(filename)s:%(lineno)s\t%(message)s', datefmt='%H:%M:%S')
 _ID = -1
-_IS_MIRROR = None
 _EXE_CONDA = 'mamba' if shutil.which('mamba') else 'conda'
 _GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 Log = logging.getLogger(__name__)
@@ -421,8 +421,22 @@ def _uv_env():
     return env
 
 
-def is_need_mirror(url='https://www.google.com', timeout=4.0):
-    global _IS_MIRROR
+def is_env_true(key='IS_MIRROR'):
+    var = os.environ.get(key, None)
+    if var is None:
+        return
+    return False if (not var or '0' in var or 'f' in var) else True
+
+
+IS_MIRROR = is_env_true('IS_MIRROR')
+
+
+def is_need_mirror(url='https://www.google.com', timeout=4.0, use_env=True):
+    '''when use_env=True, use or set environment variable `IS_MIRROR`.'''
+    global IS_MIRROR
+    if use_env and IS_MIRROR is not None:
+        Log.info(f'跳过检查，环境变量{IS_MIRROR=}')
+        return IS_MIRROR
     Log.info("检查是否需要镜像...")
     try:
         with urlopen(url, timeout=timeout) as response:
@@ -430,12 +444,16 @@ def is_need_mirror(url='https://www.google.com', timeout=4.0):
                 raise Exception(f"{url} is not reachable")
             else:
                 GITHUB_RELEASE.insert(0, [_HTTPS_GITHUB_COM, '美国', '[官方Github]'])
-        _IS_MIRROR = False
-        return _IS_MIRROR
+        IS_MIRROR = False
+        if use_env:
+            os.environ['IS_MIRROR'] = '0'
+        return IS_MIRROR
     except:
         Log.info("🪞 使用镜像")
-        _IS_MIRROR = True
-        return _IS_MIRROR
+        IS_MIRROR = True
+        if use_env:
+            os.environ['IS_MIRROR'] = '1'
+        return IS_MIRROR
 
 
 def replace_github_with_mirror(file='./install.sh'):
