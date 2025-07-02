@@ -27,7 +27,7 @@ from urllib.request import urlopen
 from datetime import datetime, timezone
 from typing import Callable, Iterable, Literal, Sequence
 IS_DEBUG = os.getenv('GITHUB_ACTIONS', None) or os.getenv('LOG', None)
-IS_JSON = os.environ.get('JSON', None)
+IS_JSON = os.environ.get('IS_JSON', None)
 _LEVEL = logging.DEBUG if IS_DEBUG else logging.INFO
 FMT = "{'log':'%(levelname)s','time':'%(asctime)s','msg':'%(message)s'}" if IS_JSON else '%(levelname)s %(asctime)s %(filename)s:%(lineno)d\t%(message)s'
 logging.basicConfig(level=_LEVEL, format=FMT, datefmt='%H:%M:%S', stream=sys.stdout)
