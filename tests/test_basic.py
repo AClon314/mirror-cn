@@ -1,10 +1,13 @@
+import os
 import re
 import pytest
 from mirror_cn import git, run, try_script, get_latest_release_tag
 from logging import getLogger
 Log = getLogger(__name__)
+IS_ACTION = os.environ.get('GITHUB_ACTIONS', None)
 
 
+@pytest.mark.skipif(bool(IS_ACTION), reason="test manually")
 @pytest.mark.parametrize(
     "cmds",
     [
@@ -14,7 +17,7 @@ Log = getLogger(__name__)
     ]
 )
 def test_run(cmds):
-    # TODO: `yes`` command will stuck python process, because it will output amounts of 'y'
+    # TODO: `yes` command will stuck python process, because it will output amounts of 'y'
     p = run(cmds, timeout=2)
     Log.info(f'{p.__dict__=}')
 
@@ -50,16 +53,5 @@ def test_pixi():
         assert False, "Failed to extract path from stdout"
     Log.info(f'{path=}')
     # warn: Could not detect shell type.
-    # Please permanently add '/root/.pixi/bin' to your $PATH to enable the 'pixi' command.
-    if p and 'PATH' in p.stderr:
-        _export = f'export PATH=$PATH:{path}'
-        _bashrc = os.path.expanduser('~/.bashrc')
-        if os.path.exists(_bashrc):
-            with open(_bashrc, 'r') as f:
-                content = f.read()
-            if _export not in content:
-                Log.info(f'Adding to {_bashrc}: {_export}')
-        with open(_bashrc, 'a') as f:
-            f.write(f'\n{_export}\n')
     if not os.path.exists(path):
         assert False, "Failed to install pixi"

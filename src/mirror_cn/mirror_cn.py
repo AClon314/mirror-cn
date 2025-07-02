@@ -13,7 +13,6 @@ ENV VARS 可用的环境变量:
 - IS_MIRROR: int  # 设置此项以跳过is_need_mirror检查
 - TIMEOUT: int = 10  # default timeout for network requests
 - CONCURRENT: int = 12  # default concurrent threads
-- GITHUB_TOKEN: str = ""  # GitHub Personal Access Token for API requests (5000/hour limit), https://github.com/settings/tokens/new
 '''
 import os
 import re
@@ -28,11 +27,12 @@ from urllib.request import urlopen
 from datetime import datetime, timezone
 from typing import Callable, Iterable, Literal, Sequence
 IS_DEBUG = os.getenv('GITHUB_ACTIONS', None) or os.getenv('LOG', None)
+IS_JSON = os.environ.get('JSON', None)
 _LEVEL = logging.DEBUG if IS_DEBUG else logging.INFO
-logging.basicConfig(level=_LEVEL, format='[%(asctime)s %(levelname)s] %(filename)s:%(lineno)s\t%(message)s', datefmt='%H:%M:%S')
+FMT = "{'log':'%(levelname)s','time':'%(asctime)s','msg':'%(message)s'}" if IS_JSON else '%(levelname)s %(asctime)s %(filename)s:%(lineno)d\t%(message)s'
+logging.basicConfig(level=_LEVEL, format=FMT, datefmt='%H:%M:%S', stream=sys.stdout)
 _ID = -1
 _EXE_CONDA = 'mamba' if shutil.which('mamba') else 'conda'
-_GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
 Log = logging.getLogger(__name__)
 def version(): return (datetime.fromtimestamp(os.path.getmtime(__file__), tz=timezone.utc)).strftime('%Y.%m.%d.%H.%M')
 
@@ -486,26 +486,18 @@ def build_shell_cmds(file: str):
     return cmds
 
 
-def get_latest_release_tag(owner_repo='prefix-dev/pixi', token: str | None = None) -> str:
-    '''header: https://docs.github.com/zh/rest/authentication/authenticating-to-the-rest-api?apiVersion=2022-11-28  
-    create GITHUB_TOKEN: https://github.com/settings/tokens/new'''
-    import json
-    from urllib.request import Request
+def get_latest_release_tag(owner_repo='prefix-dev/pixi') -> str:
+    '''raise-able, use with **try/except** to set fallback version!'''
+    url = f'https://github.com/{owner_repo}/releases/latest/download/'
+    url_expect = f'https://github.com/{owner_repo}/releases/download/'
     from urllib.error import HTTPError
-    if token is None:
-        token = _GITHUB_TOKEN
-    URL = f"https://api.github.com/repos/{owner_repo}/releases/latest"
-    headers = {'Authorization': f'Bearer {token}', 'X-GitHub-Api-Version': '2022-11-28'}
-    url = Request(URL, headers=headers) if token else URL
-    Log.debug(f'{locals()=}')
     try:
-        with urlopen(url, timeout=TIMEOUT) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            return data['tag_name']
+        with urlopen(url=url, timeout=TIMEOUT) as response:
+            return response.url.split('/')[-1]
     except HTTPError as e:
-        if 'rate limit' in e.reason:
-            Log.error(f"Try to change IP address or not using VPN, or set `GITHUB_TOKEN` env var (create at https://github.com/settings/tokens/new ).")
-        raise
+        if url_expect not in e.url:
+            raise
+        return e.url.split('/')[-1]
 
 
 def try_script(file: str, chmod: int | None = 0o755):

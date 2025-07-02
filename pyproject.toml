@@ -14,7 +14,7 @@ keywords = ["mirror", "pixi", "conda", "pypi", "github", "git"]
 license = {file = "LICENSE"}
 name = "mirror_cn"
 readme = "README.md"
-version = "2025.06.30"
+version = "2025.07.02"
 
 classifiers = [
   "License :: OSI Approved :: MIT License",
