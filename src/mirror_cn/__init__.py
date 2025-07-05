@@ -25,4 +25,4 @@ except ImportError:
     os.execvp('python', ['python','mirror_cn.py'])
 ```
 '''
-from mirror_cn.mirror_cn import *
+from .mirror_cn import *
