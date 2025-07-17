@@ -258,6 +258,7 @@ def global_git(
         return
     m = git('ls-remote', 'https://github.com/AClon314/mirror-cn', retry=False, timeout=TIMEOUT)
     if m:
+        reset_git()
         run(f'git config --{loc}  url."{mirror}".insteadOf "https://{from_domain}"')
         # call(f'git config --{loc}  url."git@{to_mirror}:".insteadOf "git@{from_domain}:"')
         return mirror
