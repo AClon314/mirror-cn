@@ -173,7 +173,7 @@ def _get_domain(url: str): return url.split("://")[1].split("/")[0]
 def _strip(s): return str(s).strip() if s else ''
 
 
-def run(cmd: Sequence[str] | str, Print=True, **kwargs) -> subprocess.CompletedProcess[str]:
+def run(cmd: Sequence[str] | str, timeout: float | None = None, Print=True, **kwargs) -> subprocess.CompletedProcess[str]:
     '''⚠️ Strongly recommended use list[str] instead of str to pass commands,
     to avoid shell injection risks for online service.'''
     global _ID
@@ -183,7 +183,7 @@ def run(cmd: Sequence[str] | str, Print=True, **kwargs) -> subprocess.CompletedP
     cmd = _get_cmd(cmd) if shell else cmd
     Log.info(f'{prefix}🐣❯ {cmd}') if Print else None
     try:
-        process = subprocess.run(cmd, shell=shell, text=True, capture_output=True, check=True, **kwargs)
+        process = subprocess.run(cmd, timeout=timeout, shell=shell, text=True, capture_output=True, check=True, **kwargs)
     except subprocess.CalledProcessError as e:
         process = e
     except subprocess.TimeoutExpired as e:
