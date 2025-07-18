@@ -538,8 +538,8 @@ def argParser():
 def main():
     global CONCURRENT, TIMEOUT
     ns, args = argParser()
-    CONCURRENT = int(os.environ.get('concurrent', CONCURRENT))
-    TIMEOUT = int(os.environ.get('timeout', TIMEOUT))
+    CONCURRENT = int(os.environ.get('CONCURRENT', CONCURRENT))
+    TIMEOUT = int(os.environ.get('TIMEOUT', TIMEOUT))
     Log.debug(f'{os.environ=}\t{locals()=}')
     if ns.smart:
         IS_MIRROR = is_need_mirror()
